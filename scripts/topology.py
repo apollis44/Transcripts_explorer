@@ -7,7 +7,7 @@ import numpy as np
 import os
 import json
 import biolib
-from extract_sequences import (
+from scripts.extract_sequences import (
     fetch_transcripts, 
     fetch_protein_sequence, 
     align_sequences
@@ -36,7 +36,7 @@ def get_transcripts_and_sequences(ensembl_id, output_dir):
             header = ">"+ "|".join(ids)
             fasta_file.write(f"{header}\n{seq}\n")
             
-    return transcripts_ids, protein_sequences
+    return transcripts_ids
 
 def align_protein_sequences(email, output_dir):
     ensure_dir(output_dir)
@@ -175,7 +175,7 @@ def create_membrane_topology_objects(mapping, output_dir):
                 seq_data[current_feature] = []
             seq_data[current_feature].append((start, width))
         sequences_data.append(seq_data)
-
+    
     # Save membrane_topology and sequences_data
     membrane_topology.to_csv(output_dir + "/membrane_topology.csv", index=True)
     with open(f"{output_dir}/sequences_data.json", "w") as f:

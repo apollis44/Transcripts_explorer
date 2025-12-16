@@ -2,9 +2,10 @@ import xenaPython as xena
 import numpy as np
 import pandas as pd
 import ssl
-import os
-import matplotlib.pyplot as plt
 import seaborn as sns
+import matplotlib.pyplot as plt
+import os
+import json
 
 # Bypass SSL certificate verification for Xena Hub
 ssl._create_default_https_context = ssl._create_unverified_context
@@ -12,7 +13,13 @@ ssl._create_default_https_context = ssl._create_unverified_context
 def extracting_expression_data(ensembl_ids):
     """
     Given a list of Ensembl transcript IDs, extract their expression data from the TCGA and GTEx datasets.
+
+    Args:
+        ensembl_ids (list): A list of Ensembl transcript IDs.
+    Returns:
+        pd.DataFrame: A DataFrame containing the expression data for the specified transcripts.
     """
+
     # Getting the right dataset from Xena
     host = "https://kidsfirst.xenahubs.net" # Public hub with both TCGA and GTEx data
     cohort = "TCGA TARGET GTEx KidsFirst" # Cohort name
@@ -26,11 +33,9 @@ def extracting_expression_data(ensembl_ids):
     # Filter transcripts to those available in the dataset and return their positions
     transcripts_for_expression = [available_transcripts[i] for i in range(len(available_transcripts)) if available_transcripts_without_version[i] in ensembl_ids]
     ensembl_ids_found_in_database = [ensembl_ids[i] for i in range(len(ensembl_ids)) if ensembl_ids[i] in available_transcripts_without_version]
-    
     for transcript in ensembl_ids:
         if transcript not in ensembl_ids_found_in_database:
-            print(f"Warning: Transcript {transcript} not found in the database.")
-            
+            print(f"\033[31mWarning: Transcript {transcript} not found in the database.\033[0m")
     expression_df = xena.dataset_fetch(host, dataset, samples, sorted(transcripts_for_expression))
     expression_df = pd.DataFrame(expression_df, columns=samples, index=sorted(ensembl_ids_found_in_database))
 
@@ -43,7 +48,12 @@ def convert_str_to_dict(s):
 def get_samples_metadata():
     """
     Fetch and process the samples metadata from the TCGA and GTEx datasets.
+
+    Returns:
+        pd.DataFrame: A DataFrame containing the phenotype metadata.
+        pd.DataFrame: A DataFrame containing the survival metadata.
     """
+
     # Getting the right dataset from Xena
     host = "https://kidsfirst.xenahubs.net" # Public hub with both TCGA and GTEx data
     cohort = "TCGA TARGET GTEx KidsFirst" # Cohort name
@@ -58,25 +68,31 @@ def get_samples_metadata():
     samples_metadata_phenotype.dropna(inplace=True) # Remove samples with NaN values
 
     # The dataset contains codes for categorical fields, we convert them to their actual values
+    # To do so, we fetch the codes from Xena and create a mapping dictionary
     codes = xena.field_codes(host, metadata_dataset, fields)
 
     for i, field in enumerate(fields):
         codes_field = codes[i]['code']
         codes_field_dict = convert_str_to_dict(codes_field)
         samples_metadata_phenotype[field] = samples_metadata_phenotype[field].astype(object)
-        # Avoid row-wise loop for performance, though leaving consistent with original logic for safety
-        for j in range(len(samples_metadata_phenotype)):
-             # Using efficient iloc access
-             val = samples_metadata_phenotype.iloc[j, samples_metadata_phenotype.columns.get_loc(field)]
-             samples_metadata_phenotype.iloc[j, samples_metadata_phenotype.columns.get_loc(field)] = codes_field_dict[int(val)]
+        for i in range(len(samples_metadata_phenotype)):
+            samples_metadata_phenotype.iloc[i, samples_metadata_phenotype.columns.get_loc(field)] = codes_field_dict[int(samples_metadata_phenotype.iloc[i][field])]
 
     return samples_metadata_phenotype
 
 def merge_expression_and_metadata(expression_df, samples_metadata_phenotype):
     """
     Merge the expression data with the samples metadata.
+
+    Args:
+        expression_df (pd.DataFrame): DataFrame containing expression data.
+        samples_metadata_phenotype (pd.DataFrame): DataFrame containing phenotype metadata.
+
+    Returns:
+        pd.DataFrame: Merged DataFrame containing both expression data and metadata.
     """
-    # We keep only samples that are in the three datasets
+
+    # We keep only samples that are in the datasets
     common_samples = expression_df.columns.intersection(samples_metadata_phenotype.index).tolist()
     expression_df = expression_df.loc[:,common_samples].T
     samples_metadata_phenotype = samples_metadata_phenotype.loc[common_samples]
@@ -92,94 +108,68 @@ def merge_expression_and_metadata(expression_df, samples_metadata_phenotype):
 
     return expression_df
 
-def ensure_dir(directory):
-    if not os.path.exists(directory):
-        os.makedirs(directory)
+def getting_expression_data(ensembl_ids, output_dir):
+    expression_df_init = extracting_expression_data(ensembl_ids)
+    metadata_df_phenotype_init = get_samples_metadata()
+    expression_df = merge_expression_and_metadata(expression_df_init, metadata_df_phenotype_init)
 
-def get_expression_data(ensembl_ids, output_dir):
-    ensure_dir(output_dir)
-    file_path = f"{output_dir}/TCGA_GTEx_expression_data.csv"
-    
-    if os.path.exists(file_path):
-        print("Loading expression data from file...")
-        return pd.read_csv(file_path, index_col=0)
-    
-    print("Fetching expression data from Xena...")
-    expression_df = extracting_expression_data(ensembl_ids)
-    samples_metadata_phenotype = get_samples_metadata()
-    expression_df = merge_expression_and_metadata(expression_df, samples_metadata_phenotype)
-    
-    expression_df.to_csv(file_path)
-    print(f"Saved TCGA_GTEx_expression_data.csv to {output_dir}")
     return expression_df
 
-def plot_expression(expression_df, mapping, type_data="TCGA", specific_cancer_type=None):
-    print(f"Plotting {type_data} expression...")
+def create_expression_figure_objects(output_dir, expression_df, mapping):
+    print(f"Creating expression figure objects...")
 
-    if specific_cancer_type:
-        expression_df = expression_df[expression_df["cancer_type"] == specific_cancer_type]
-        number_transcripts = len(expression_df.columns) - 2
-        length_figure = number_transcripts + 1
-    else:
-        length_figure = 15
-        
-    expression_df = expression_df[expression_df["study"] == type_data]
-    nb_cancer_types = len(expression_df["cancer_type"].unique())
-    
-    if nb_cancer_types == 0:
-        fig, ax = plt.subplots()
-        ax.text(0.5, 0.5, "No data available", ha='center', va='center')
-        return fig
-
-    # Calculate layout
-    cols = 2 if nb_cancer_types > 1 else 1
-    rows = nb_cancer_types // 2 + 1 if nb_cancer_types > 1 else 1
-    
-    fig, axs = plt.subplots(rows, cols, figsize=(length_figure, 5*rows), sharey=True)
-    
+    expression_df = expression_df[expression_df["study"].isin(["GTEX", "TCGA"])]
     dd = expression_df.melt(id_vars=["cancer_type", "study"], var_name="transcript", value_name="expression")
 
-    cancer_types = expression_df["cancer_type"].unique()
-    
-    # Handle single subplot case
-    if nb_cancer_types == 1:
-        axs = np.array([axs])
-
-    axs_flat = axs.flatten()
-
-    for i, cancer_type in enumerate(cancer_types):
-        current_plot = axs_flat[i]
-        dd_cancer = dd[dd["cancer_type"] == cancer_type]
-        dd_cancer = dd_cancer.assign(
-            protein=dd_cancer["transcript"].map(
-                lambda x: next((mapping[name] for name in mapping.keys() if x in name), 
-                            "Unknown")
+    dd = dd.assign(
+        protein=dd["transcript"].map(
+            lambda x: next((mapping[name] for name in mapping.keys() if x in name), 
+                        "Unknown")
             )
         )
-        dd_cancer = dd_cancer.sort_values(by="protein")
+    dd = dd.sort_values(by="protein")
+    proteins = dd.loc[:, "protein"].unique()
+    palette = sns.color_palette("Set2", len(proteins))
+    protein_to_color = dict(zip(proteins, palette))
 
-        sns.boxplot(data=dd_cancer, 
-                    x="transcript",
-                    y="expression", 
-                    hue="protein", ax=current_plot)
+    def get_boxplot_stats(group_data):
+        """
+        Calculates standard boxplot statistics for a given array of data.
+        """
+        # 1. Basic Stats
+        med = group_data.median()
+        q1 = group_data.quantile(0.25)
+        q3 = group_data.quantile(0.75)
+        iqr = q3 - q1
         
-        if current_plot.legend_:
-            current_plot.legend_.remove()
-            
-        current_plot.set_ylabel("log2(TPM)")
-        current_plot.set_xlabel("")
-        current_plot.tick_params(axis='x', rotation=90)
-        current_plot.set_title(cancer_type)
+        # 2. Whiskers (1.5 * IQR rule)
+        low_limit = q1 - 1.5 * iqr
+        high_limit = q3 + 1.5 * iqr
+        
+        # Identify data points within the limits
+        inside_data = group_data[(group_data >= low_limit) & (group_data <= high_limit)]
+        
+        # The whisker ends are the actual min/max of the data INSIDE the limits
+        # (Matplotlib convention: whiskers don't extend to empty space)
+        whislo = inside_data.min() if not inside_data.empty else q1
+        whishi = inside_data.max() if not inside_data.empty else q3
+        
+        # 3. Outliers (Fliers)
+        fliers = group_data[(group_data < whislo) | (group_data > whishi)].tolist()
+        
+        return json.dumps({
+            "label": group_data.name[-1],
+            "med": med,
+            "q1": q1,
+            "q3": q3,
+            "whislo": whislo,
+            "whishi": whishi,
+            "fliers": fliers,
+            "color": protein_to_color[group_data.name[2]]
+        })
 
-    # Hide unused subplots
-    for j in range(i + 1, len(axs_flat)):
-        axs_flat[j].axis('off')
+    grouped_stats = dd.groupby(['study', 'cancer_type', 'protein', 'transcript'])['expression'].apply(get_boxplot_stats)
 
-    # Add legend
-    if nb_cancer_types > 1:
-        handles, labels = axs_flat[0].get_legend_handles_labels()
-        if handles:
-            fig.legend(handles, labels, bbox_to_anchor=(1.01, 1), loc='upper left', title="Protein Isoform")
-            
-    plt.tight_layout()
-    return fig
+    grouped_stats.to_csv(f"{output_dir}/TCGA_GTEx_plotting_data.csv")
+
+    return
