@@ -112,12 +112,6 @@ def generate_isoform_mapping(output_dir):
         for tid in item["all_ids"]:
             transcript_mapping.append({"Transcript_ID": tid, "Isoform_ID": isoform_name})
             
-    # Save mapping table
-    mapping_df = pd.DataFrame(transcript_mapping)
-    mapping_df.sort_values("Transcript_ID", inplace=True) # Sort table by Transcript ID for easy lookup
-    mapping_df.to_csv(f"{output_dir}/transcript_to_isoform_mapping.csv", index=False)
-    print(f"Saved transcript_to_isoform_mapping.csv to {output_dir}")
-    
     return header_mapping
 
 def create_membrane_topology_objects(mapping, output_dir):
@@ -182,3 +176,4 @@ def create_membrane_topology_objects(mapping, output_dir):
         json.dump(sequences_data, f, indent=4)
     print(f"Saved sequences_data.json to {output_dir}")
 
+    return sequences_data
