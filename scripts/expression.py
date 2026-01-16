@@ -129,7 +129,7 @@ def create_expression_figure_objects(output_dir, expression_df, mapping):
         )
     dd = dd.sort_values(by="protein")
     proteins = dd.loc[:, "protein"].unique()
-    palette = sns.color_palette("Set2", len(proteins))
+    palette = sns.color_palette("Set2", len(proteins)).as_hex()
     protein_to_color = dict(zip(proteins, palette))
 
     def get_boxplot_stats(group_data):
@@ -151,25 +151,27 @@ def create_expression_figure_objects(output_dir, expression_df, mapping):
         
         # The whisker ends are the actual min/max of the data INSIDE the limits
         # (Matplotlib convention: whiskers don't extend to empty space)
-        whislo = inside_data.min() if not inside_data.empty else q1
-        whishi = inside_data.max() if not inside_data.empty else q3
+        lowerfence = inside_data.min() if not inside_data.empty else q1
+        upperfence = inside_data.max() if not inside_data.empty else q3
         
         # 3. Outliers (Fliers)
-        fliers = group_data[(group_data < whislo) | (group_data > whishi)].tolist()
+        fliers = group_data[(group_data < lowerfence) | (group_data > upperfence)].tolist()
         
         return json.dumps({
-            "label": group_data.name[-1],
-            "med": med,
-            "q1": q1,
-            "q3": q3,
-            "whislo": whislo,
-            "whishi": whishi,
-            "fliers": fliers,
-            "color": protein_to_color[group_data.name[2]]
+            "x": [group_data.name[-1]],
+            "median": [med],
+            "q1": [q1],
+            "q3": [q3],
+            "lowerfence": [lowerfence],
+            "upperfence": [upperfence],
+            "y": fliers,
+            "boxpoints": "outliers",
+            "marker_color": protein_to_color[group_data.name[2]],
         })
 
-    grouped_stats = dd.groupby(['study', 'cancer_type', 'protein', 'transcript'])['expression'].apply(get_boxplot_stats)
+    grouped_stats = pd.DataFrame(dd.groupby(['study', 'cancer_type', 'protein', 'transcript'])['expression'].apply(get_boxplot_stats))
+    grouped_stats["expression"] = grouped_stats["expression"].apply(json.loads)
 
     grouped_stats.to_csv(f"{output_dir}/TCGA_GTEx_plotting_data.csv")
 
-    return
+    return grouped_stats
