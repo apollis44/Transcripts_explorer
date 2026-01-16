@@ -14,6 +14,7 @@ studies_inital_value = ["TCGA"]
 cancer_types_inital_value = []
 
 app = dash.Dash(external_stylesheets=[dbc.themes.BOOTSTRAP])
+server = app.server
 base_dir = os.path.dirname(os.path.abspath(__file__))
 
 header = html.Div(
