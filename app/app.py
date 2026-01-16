@@ -24,6 +24,7 @@ header = html.Div(
             [
                 dbc.Tab(label="HER2", tab_id="HER2", label_style={"cursor": "pointer"}),
                 dbc.Tab(label="CD20", tab_id="CD20", label_style={"cursor": "pointer"}),
+                dbc.Tab(label="PROM1", tab_id="PROM1", label_style={"cursor": "pointer"}),
             ],
             id="top-tabs",
             active_tab="HER2",
