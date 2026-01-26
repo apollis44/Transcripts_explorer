@@ -4,32 +4,35 @@ from dash import Input, Output, dcc, html, State, ctx
 from scripts.plots_generation import create_topology_plot, plot_expression_data
 import pandas as pd
 import os
-import json
 from functools import lru_cache
 import shelve
 
 # Initial values for the dropdowns
 isoforms_inital_value = []
-studies_inital_value = ["TCGA"]
 cancer_types_inital_value = []
 
 app = dash.Dash(external_stylesheets=[dbc.themes.BOOTSTRAP])
 server = app.server
 base_dir = os.path.dirname(os.path.abspath(__file__))
 
+# Get the protein options from the shelve file
+db = shelve.open(f"{base_dir}/files_for_plots/membrane_topology_objects")
+protein_options = list(db.keys())
+db.close()
+
 header = html.Div(
     [
         html.H3("Transcript Explorer", className="me-4"),
-        dbc.Tabs(
+        html.Div(
             [
-                dbc.Tab(label="HER2", tab_id="HER2", label_style={"cursor": "pointer"}),
-                dbc.Tab(label="CD20", tab_id="CD20", label_style={"cursor": "pointer"}),
-                dbc.Tab(label="PROM1", tab_id="PROM1", label_style={"cursor": "pointer"}),
+                dbc.Input(id="protein-input", 
+                          list="protein-options", 
+                          placeholder="Type a protein name...",
+                          autoComplete="off"),
+                html.Datalist(id="protein-options")
             ],
-            id="top-tabs",
-            active_tab="HER2",
-            className="border-0",
         ),
+        dbc.Button("Submit", id="protein-submit", n_clicks=0),
     ],
     className="d-flex align-items-center border-bottom mb-4 pt-2 ps-3",
     style={"height": "60px"}
@@ -48,7 +51,7 @@ sidebar = html.Div(
         ),
     ],
     style={
-            "backgroundColor": "#f8f9fa", # Light gray background
+            "backgroundColor": "#f8f9fa",
             "padding": "10px",
             "border": "1px solid #dee2e6",
             "borderRadius": "4px",
@@ -84,21 +87,33 @@ app.layout = dbc.Container(
     className="p-0"
 )
 
+@app.callback(
+    Output("protein-options", "children"),
+    Input("protein-input", "value")
+)
+def update_protein_options(value):
+    if value is None:
+        return []
+    options = [html.Option(value=protein) for protein in protein_options if protein.upper().startswith(value.upper())]
+    if len(options) > 10:
+        options = options[:10] + [html.Option(value="...", disabled=True)]
+    return options
+
 @lru_cache(maxsize=10)
-def get_expression_data(active_tab):
+def get_expression_data(protein):
     db = shelve.open(f"{base_dir}/files_for_plots/TCGA_GTEx_plotting_data")
-    df = db[active_tab]
+    df = db[protein]
     db.close()
     return df
 
 @lru_cache(maxsize=10)
-def get_topology_data(active_tab):
+def get_topology_data(protein):
     db = shelve.open(f"{base_dir}/files_for_plots/transcripts_to_isoforms_mapping")
-    mapping = db[active_tab]
+    mapping = db[protein]
     db.close()
 
     db = shelve.open(f"{base_dir}/files_for_plots/membrane_topology_objects")
-    sequences_data = db[active_tab]
+    sequences_data = db[protein]
     db.close()
 
     return mapping, sequences_data
@@ -106,13 +121,24 @@ def get_topology_data(active_tab):
 @app.callback(
     Output("page-content", "children"),
     Input("url", "pathname"),
-    Input("top-tabs", "active_tab")
+    Input("protein-input", "n_submit"),
+    Input("protein-submit", "n_clicks"),
+    State("protein-input", "value")
 )
-def render_page_content(pathname, active_tab):
-    expression_df = get_expression_data(active_tab)
+def render_page_content(pathname, n_submit, n_clicks, protein):
+    if protein is None:
+        return html.P("Please select a protein")
+
+    protein = protein.upper()
+
+    if protein not in protein_options:
+        return html.P("This protein is not in the database")
+
+    expression_df = get_expression_data(protein)
 
     if pathname == "/":
-        return html.P("This is the content of the home page of " + active_tab + "!")
+        return html.P("This is the content of the home page of " + protein + "!")
+
     elif pathname == "/Topology":
         return html.Div(
             [
@@ -131,151 +157,119 @@ def render_page_content(pathname, active_tab):
                 ),
             ]
         )
+
     elif pathname == "/Expression":
-        return html.Div(
-            [
-                dbc.Button(
-                    "Choose parameters",
-                    id="expression-popover-button",
-                    className="me-1",
+        return html.Div(id="expression-container")
+
+@app.callback(
+    Output("expression-container", "children"),
+    Input("expression-container", "id"),
+    State("protein-input", "value"),
+    optional=True,
+)
+def manage_expression_page(expression_container_id, protein):
+    protein = protein.upper()
+    expression_df = get_expression_data(protein)
+
+    return html.Div([
+        html.Div([
+                html.P("Select the isoforms to plot:"),
+                dcc.Dropdown(
+                    options=expression_df.loc[:,"protein"].unique(),
+                    value=isoforms_inital_value,
+                    multi=True,
+                    id="expression-isoforms-dropdown",
+                    placeholder="Select or leave empty to plot all isoforms",
                 ),
-                dbc.Popover(
-                    dbc.PopoverBody(
-                        [
-                            html.P("Select the isoforms to plot:"),
-                            dcc.Dropdown(
-                                options=expression_df.loc[:,"protein"].unique(),
-                                value=isoforms_inital_value,
-                                multi=True,
-                                id="expression-isoforms-dropdown",
-                            ),
-                            html.Br(),
-                            html.P("Select the studies to plot:"),
-                            dcc.Checklist(
-                                options=expression_df.loc[:,"study"].unique(),
-                                value=studies_inital_value,
-                                id="expression-study-checklist",
-                            ),
-                            html.Br(),
-                            html.P("Select the cancer types to plot:"),
-                            dcc.Dropdown(
-                                options=expression_df.loc[:,"cancer_type"].unique(),
-                                value=cancer_types_inital_value,
-                                multi=True,
-                                id="expression-cancer-type-dropdown",
-                            ),
-                            html.Br(),
-                            # We want the buttons next to each other
-                            dbc.Button("Update Plot", id="expression-update-button", className="me-1"),
-                            dbc.Button("Cancel", id="expression-cancel-button", className="me-1"),
-                        ]
-                    ),
-                    target="expression-popover-button",
-                    trigger="click",
-                    id="expression-popover",
-                    style={"width": "500px"}
+                html.Br(),
+                html.P("Select the cancer types to plot:"),
+                dcc.Dropdown(
+                    options=expression_df.loc[:,"cancer_type"].unique(),
+                    value=cancer_types_inital_value,
+                    multi=True,
+                    id="expression-cancer-type-dropdown",
+                    placeholder="Select or leave empty to plot all cancer types",
                 ),
-                dbc.Spinner(
-                    children=dcc.Graph(id="expression-plot"),
-                    size="lg",
-                    color="primary",
-                    type="border",
-                    fullscreen=False,
-                    id="expression-spinner",
-                    spinner_style={
-                        "position": "absolute", 
-                        "top": "20px", 
-                        "left": "50%", 
-                    },
-                ),
+                html.Br(),
+                # We want the buttons next to each other
+                dbc.Button("Load plot", id="expression-load-button", className="me-1")
             ],
-        )
-         
-    # If the user tries to reach a different page, return a 404 message
-    return html.Div(
-        [
-            html.H1("404: Not found", className="text-danger"),
-            html.Hr(),
-            html.P(f"The pathname {pathname} was not recognised..."),
-        ],
-        className="p-3 bg-light rounded-3",
-    )
+            id="expression-parameters-container"
+        ),
+        html.Div([
+            dbc.Spinner(
+                children=dcc.Graph(id="expression-plot"),
+                size="lg",
+                color="primary",
+                type="border",
+                fullscreen=False,
+                id="expression-spinner",
+                spinner_style={
+                    "position": "absolute", 
+                    "top": "20px", 
+                    "left": "50%", 
+                },
+            ),
+            dbc.Button("Reset parameters", id="expression-reset-button", className="me-1"),
+            ],
+            id="expression-container",
+            style={'display': 'none'}
+        ),
+        dcc.Store(id="expression-parameters")
+    ])
+
+@app.callback(
+    Output("expression-container", "style"),
+    Output("expression-parameters-container", "style"),
+    Output("expression-parameters", "data"),
+    Output("expression-isoforms-dropdown", "value"),
+    Output("expression-cancer-type-dropdown", "value"),
+    Input("expression-load-button", "n_clicks"),
+    Input("expression-reset-button", "n_clicks"),
+    State("expression-isoforms-dropdown", "value"),
+    State("expression-cancer-type-dropdown", "value"),
+    prevent_initial_call=True,
+    optional=True,
+)
+def expression_container_style(_1, _2, isoforms, cancer_types):
+    ctx = dash.callback_context
+    trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
+    if trigger_id == "expression-load-button":
+        return {'display': 'block'}, {'display': 'none'}, [isoforms, cancer_types], isoforms, cancer_types
+    elif trigger_id == "expression-reset-button":
+        return {'display': 'none'}, {'display': 'block'}, dash.no_update, isoforms_inital_value, cancer_types_inital_value
 
 @app.callback(
     Output("topology-plot", "figure"),
-    Input("top-tabs", "active_tab"),
+    Input("protein-input", "value"),
     optional=True,
 )
-def topology_plot(active_tab):
+def topology_plot(protein):
+    protein = protein.upper()
     title = "Membrane topology"
     x_label = "Amino acid position in MSA"
-    mapping, sequences_data = get_topology_data(active_tab)
-    print(mapping)
+    mapping, sequences_data = get_topology_data(protein)
     fig = create_topology_plot(mapping, sequences_data, title, x_label)
     return fig
 
 @app.callback(
     Output('expression-plot', 'figure'),
-    Output("expression-isoforms-dropdown", "value"),
-    Output("expression-study-checklist", "value"),
-    Output("expression-cancer-type-dropdown", "value"),
-    Input('expression-update-button', 'n_clicks'),
-    Input('expression-cancel-button', 'n_clicks'),
-    State("expression-isoforms-dropdown", "value"),
-    State("expression-study-checklist", "value"),
-    State("expression-cancer-type-dropdown", "value"),
-    State("top-tabs", "active_tab"),
+    Input("expression-parameters", "data"),
+    State("protein-input", "value"),
+    prevent_initial_call=True,
     optional=True,
-    running=[
-        (Output("expression-popover", "is_open"), False, False),
-    ]
-    )
-def update_expression_plot(_1, _2, isoforms, studies, cancer_types, active_tab):
-    button_id = ctx.triggered_id
+)
+def update_expression_plot(parameters, protein):
+    protein = protein.upper()
+    expression_df = get_expression_data(protein)
+    isoforms, cancer_types = parameters
 
-    expression_df = get_expression_data(active_tab)
-
-    # If cancel button was the one pushed we reset the values
-    if button_id == "expression-cancel-button":
-        isoforms = isoforms_inital_value
-        studies = studies_inital_value
-        cancer_types = cancer_types_inital_value
-
-    # For the first call, the values are not initialized yet
-    if isoforms is None or studies is None or cancer_types is None:
-        isoforms = isoforms_inital_value
-        studies = studies_inital_value
-        cancer_types = cancer_types_inital_value
-    
     ## Filter logic
     idx = pd.IndexSlice
 
     # Filter isoforms
     if len(isoforms) > 0:
         expression_df = expression_df.loc[expression_df.loc[:,"protein"].isin(isoforms),:]
-
-    # Filter study
-    # If no study is selected, return an empty figure
-    if len(studies) == 0:
-        empty_fig = go.Figure()
-        empty_fig.update_layout(
-            xaxis =  { "visible": False },
-            yaxis = { "visible": False },
-            annotations = [
-                {   
-                    "text": "No study selected",
-                    "xref": "paper",
-                    "yref": "paper",
-                    "showarrow": False,
-                    "font": {
-                        "size": 28
-                    }
-                }
-            ]
-        )
-        return empty_fig
-
-    expression_df = expression_df.loc[expression_df.loc[:,"study"].isin(studies),:]
 
     # Filter cancer type
     if len(cancer_types) > 0:
@@ -285,19 +279,7 @@ def update_expression_plot(_1, _2, isoforms, studies, cancer_types, active_tab):
     fig = plot_expression_data(expression_df)
 
     # Reset the buttons and close the popover
-    return fig, isoforms, studies, cancer_types
-
-@app.callback(
-    Output("expression-cancer-type-dropdown", "options"),
-    Input("expression-study-checklist", "value"),
-    State("top-tabs", "active_tab"),
-    optional=True,
-)
-def update_cancer_type_dropdown(studies, active_tab):
-    expression_df = get_expression_data(active_tab)
-    if studies:
-        return expression_df.loc[expression_df.loc[:,"study"].isin(studies),"cancer_type"].unique().tolist()
-    return dash.no_update
+    return fig
 
 if __name__ == "__main__":
     app.run(debug=True)
