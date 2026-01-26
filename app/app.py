@@ -100,8 +100,7 @@ def get_topology_data(active_tab):
     db = shelve.open(f"{base_dir}/files_for_plots/membrane_topology_objects")
     sequences_data = db[active_tab]
     db.close()
-    # mapping = json.load(open(base_dir + "/files_for_plots/" + active_tab + "/transcript_to_isoform_mapping.json"))
-    # sequences_data = json.load(open(base_dir + "/files_for_plots/" + active_tab + "/sequences_data.json"))
+
     return mapping, sequences_data
 
 @app.callback(
@@ -145,7 +144,7 @@ def render_page_content(pathname, active_tab):
                         [
                             html.P("Select the isoforms to plot:"),
                             dcc.Dropdown(
-                                options=expression_df.index.get_level_values("protein").unique(),
+                                options=expression_df.loc[:,"protein"].unique(),
                                 value=isoforms_inital_value,
                                 multi=True,
                                 id="expression-isoforms-dropdown",
@@ -153,14 +152,14 @@ def render_page_content(pathname, active_tab):
                             html.Br(),
                             html.P("Select the studies to plot:"),
                             dcc.Checklist(
-                                options=expression_df.index.get_level_values("study").unique(),
+                                options=expression_df.loc[:,"study"].unique(),
                                 value=studies_inital_value,
                                 id="expression-study-checklist",
                             ),
                             html.Br(),
                             html.P("Select the cancer types to plot:"),
                             dcc.Dropdown(
-                                options=expression_df.index.get_level_values("cancer_type").unique(),
+                                options=expression_df.loc[:,"cancer_type"].unique(),
                                 value=cancer_types_inital_value,
                                 multi=True,
                                 id="expression-cancer-type-dropdown",
@@ -211,7 +210,7 @@ def topology_plot(active_tab):
     title = "Membrane topology"
     x_label = "Amino acid position in MSA"
     mapping, sequences_data = get_topology_data(active_tab)
-
+    print(mapping)
     fig = create_topology_plot(mapping, sequences_data, title, x_label)
     return fig
 
@@ -253,7 +252,7 @@ def update_expression_plot(_1, _2, isoforms, studies, cancer_types, active_tab):
 
     # Filter isoforms
     if len(isoforms) > 0:
-        expression_df = expression_df.loc[idx[:,:,list(isoforms),:]]
+        expression_df = expression_df.loc[expression_df.loc[:,"protein"].isin(isoforms),:]
 
     # Filter study
     # If no study is selected, return an empty figure
@@ -276,11 +275,11 @@ def update_expression_plot(_1, _2, isoforms, studies, cancer_types, active_tab):
         )
         return empty_fig
 
-    expression_df = expression_df.loc[idx[list(studies),:,:,:]]
+    expression_df = expression_df.loc[expression_df.loc[:,"study"].isin(studies),:]
 
     # Filter cancer type
     if len(cancer_types) > 0:
-        expression_df = expression_df.loc[idx[:,list(cancer_types),:,:]]
+        expression_df = expression_df.loc[expression_df.loc[:,"cancer_type"].isin(cancer_types),:]
 
     # Generate the plot
     fig = plot_expression_data(expression_df)
@@ -296,9 +295,8 @@ def update_expression_plot(_1, _2, isoforms, studies, cancer_types, active_tab):
 )
 def update_cancer_type_dropdown(studies, active_tab):
     expression_df = get_expression_data(active_tab)
-    idx = pd.IndexSlice
     if studies:
-        return expression_df.loc[idx[list(studies),:,:,:]].index.get_level_values("cancer_type").unique().tolist()
+        return expression_df.loc[expression_df.loc[:,"study"].isin(studies),"cancer_type"].unique().tolist()
     return dash.no_update
 
 if __name__ == "__main__":

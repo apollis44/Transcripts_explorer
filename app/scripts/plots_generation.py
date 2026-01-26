@@ -24,7 +24,7 @@ def create_topology_plot(mapping, sequences_data, title, x_label):
     }
 
     fig = go.Figure()
-    y_labels = list(mapping.values())
+    y_labels = list(dict.fromkeys(mapping.values()))
     added_to_legend = set()
 
     # Loop through sequences (isoforms)
@@ -88,19 +88,12 @@ def create_topology_plot(mapping, sequences_data, title, x_label):
 def plot_expression_data(expression_df):
     print("Creating expression plot...")
 
-    indexes = expression_df.index.droplevel(level="transcript").droplevel(level="protein").unique()
-    expression_data_to_plot = []
-
-    for index in indexes:
-        expression_data = expression_df.loc[index].values
-        expression_data_to_plot.append(expression_data.flatten())
-
-    cancer_types = expression_df.index.get_level_values('cancer_type').unique().tolist()
+    cancer_types = expression_df.loc[:,"cancer_type"].unique().tolist()
     nb_cancer_types = len(cancer_types)
     rows_count = math.ceil(nb_cancer_types / 2)
     pixels_per_row = 300
 
-    isoforms_list = expression_df.index.get_level_values('protein').tolist()
+    transcripts_list = expression_df.loc[:,"transcript"].unique().tolist()
 
     fig = make_subplots(rows=math.ceil(nb_cancer_types/2), 
                         cols=2 if nb_cancer_types > 1 else 1,
@@ -109,21 +102,25 @@ def plot_expression_data(expression_df):
                         )
 
     isoforms_seen = []
-    for i, data_for_each_cancer_type in enumerate(expression_data_to_plot):
-        for j, data_for_each_transcript in enumerate(data_for_each_cancer_type):
-            data_items = data_for_each_transcript.copy()
+    for i, cancer_type in enumerate(cancer_types):
+        for j, transcript in enumerate(transcripts_list):
+            data_for_each_transcript = expression_df.loc[(expression_df.loc[:,"transcript"] == transcript) & (expression_df.loc[:,"cancer_type"] == cancer_type), :]
+            isoform = data_for_each_transcript.loc[:,"protein"].iloc[0]
 
-            data_items.pop("y")
-            data_items.pop("boxpoints",)
-
-            if isoforms_list[j] not in isoforms_seen:
-                isoforms_seen.append(isoforms_list[j])
+            if isoform not in isoforms_seen:
+                isoforms_seen.append(isoform)
                 fig.add_trace(
                     go.Box(
-                        data_items,
-                        name=isoforms_list[j],
+                        x=data_for_each_transcript["x"].iloc[0],
+                        q1=data_for_each_transcript["q1"].iloc[0],
+                        q3=data_for_each_transcript["q3"].iloc[0],
+                        median=data_for_each_transcript["median"].iloc[0],
+                        lowerfence=data_for_each_transcript["lowerfence"].iloc[0],
+                        upperfence=data_for_each_transcript["upperfence"].iloc[0],
+                        marker_color=data_for_each_transcript["marker_color"].iloc[0],
+                        name=isoform,
                         showlegend=True,
-                        legendgroup=isoforms_list[j],
+                        legendgroup=isoform,
                     ), 
                     row=i//2+1, 
                     col=i%2+1,
@@ -132,34 +129,40 @@ def plot_expression_data(expression_df):
             else:
                 fig.add_trace(
                     go.Box(
-                        data_items,
-                        name=isoforms_list[j],
+                        x=data_for_each_transcript["x"].iloc[0],
+                        q1=data_for_each_transcript["q1"].iloc[0],
+                        q3=data_for_each_transcript["q3"].iloc[0],
+                        median=data_for_each_transcript["median"].iloc[0],
+                        lowerfence=data_for_each_transcript["lowerfence"].iloc[0],
+                        upperfence=data_for_each_transcript["upperfence"].iloc[0],
+                        marker_color=data_for_each_transcript["marker_color"].iloc[0],
+                        name=isoform,
                         showlegend=False,
-                        legendgroup=isoforms_list[j],
+                        legendgroup=isoform,
                     ), 
                     row=i//2+1, 
                     col=i%2+1,
                 )
 
             if len(data_for_each_transcript["y"]) > 0:
-                    fig.add_trace(
-                        go.Scatter(
-                            # Repeat the X name for every outlier point
-                            x=[data_for_each_transcript["x"][0]] * len(data_for_each_transcript["y"]), 
-                            y=data_for_each_transcript["y"],
-                            mode='markers',
-                            marker=dict(
-                                color=data_for_each_transcript["marker_color"],
-                                size=5, # Adjust outlier size as needed
-                                symbol='circle-open' # Optional: make them hollow circles
-                            ),
-                            showlegend=False,
-                            name=isoforms_list[j],
-                            legendgroup=isoforms_list[j],
+                fig.add_trace(
+                    go.Scatter(
+                        # Repeat the X name for every outlier point
+                        x=[data_for_each_transcript["x"].iloc[0]] * len(data_for_each_transcript["y"].tolist()), 
+                        y=data_for_each_transcript["y"].tolist(),
+                        mode='markers',
+                        marker=dict(
+                            color=data_for_each_transcript["marker_color"].iloc[0],
+                            size=5, # Adjust outlier size as needed
+                            symbol='circle-open' # Optional: make them hollow circles
                         ),
-                        row=i//2+1,
-                        col=i%2+1
-                    )
+                        showlegend=False,
+                        name=isoform,
+                        legendgroup=isoform,
+                    ),
+                    row=i//2+1,
+                    col=i%2+1
+                )
 
 
 

@@ -127,7 +127,8 @@ def create_expression_figure_objects(output_dir, expression_df, mapping):
                         "Unknown")
             )
         )
-    dd = dd.sort_values(by="protein")
+    dd = dd.sort_values(by="protein", key=lambda x: x.str.split("_").str[1].astype(int))
+    dd = dd.sort_values(by=["study", "cancer_type"])
     proteins = dd.loc[:, "protein"].unique()
     palette = sns.color_palette("Set2", len(proteins)).as_hex()
     protein_to_color = dict(zip(proteins, palette))
@@ -157,7 +158,7 @@ def create_expression_figure_objects(output_dir, expression_df, mapping):
         # 3. Outliers (Fliers)
         fliers = group_data[(group_data < lowerfence) | (group_data > upperfence)].tolist()
         
-        return json.dumps({
+        return pd.Series({
             "x": [group_data.name[-1]],
             "median": [med],
             "q1": [q1],
@@ -165,13 +166,10 @@ def create_expression_figure_objects(output_dir, expression_df, mapping):
             "lowerfence": [lowerfence],
             "upperfence": [upperfence],
             "y": fliers,
-            "boxpoints": "outliers",
             "marker_color": protein_to_color[group_data.name[2]],
         })
+    
+    dd = dd.groupby(['study', 'cancer_type', 'protein', 'transcript'], sort=False)['expression'].apply(get_boxplot_stats).unstack().reset_index()
+    dd.to_csv(f"{output_dir}/TCGA_GTEx_plotting_data.csv")
 
-    grouped_stats = pd.DataFrame(dd.groupby(['study', 'cancer_type', 'protein', 'transcript'])['expression'].apply(get_boxplot_stats))
-    grouped_stats["expression"] = grouped_stats["expression"].apply(json.loads)
-
-    grouped_stats.to_csv(f"{output_dir}/TCGA_GTEx_plotting_data.csv")
-
-    return grouped_stats
+    return dd
