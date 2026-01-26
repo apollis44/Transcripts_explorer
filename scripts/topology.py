@@ -30,13 +30,16 @@ def get_transcripts_and_sequences(ensembl_id, output_dir):
     protein_sequences = fetch_protein_sequence(transcripts_ids)
                 
     unique_sequences = set(protein_sequences.values())
+    transcripts_mapping = {}
     with open(f"{output_dir}/isoforms.fasta", "w") as fasta_file:
-        for seq in unique_sequences:
+        for i, seq in enumerate(unique_sequences):
             ids = [k for k, v in protein_sequences.items() if v == seq]
-            header = ">"+ "|".join(ids)
+            header = ">"+ "Isoform_" + str(i + 1)
             fasta_file.write(f"{header}\n{seq}\n")
+            for id in ids:
+                transcripts_mapping[id] = header.split(">")[-1]
             
-    return transcripts_ids
+    return transcripts_ids, transcripts_mapping
 
 def align_protein_sequences(email, output_dir):
     ensure_dir(output_dir)
@@ -77,62 +80,26 @@ def run_deeptmhmm(output_dir):
     print("DeepTMHMM run completed.")
     return
 
-
-def generate_isoform_mapping(output_dir):
-
-    header_mapping = {}
-
-    with open(f"{output_dir}/isoforms.fasta") as f:
-        lines = f.readlines()
-        headers = [line.strip()[1:] for line in lines if line.startswith(">")]
-
-    # Process headers
-    # Each header is like "ID1|ID2|ID3"
-    # We want to sort these groups based on the alphabetical order of their transcripts
-    
-    temp_list = []
-    for header in headers:
-        transcript_ids = header.split("|")
-        transcript_ids.sort() # Sort IDs within the group to find the "first" one
-        representative_id = transcript_ids[0]
-        temp_list.append({
-            "header": header,
-            "representative": representative_id,
-            "all_ids": transcript_ids
-        })
-    
-    # Sort the groups by their representative ID
-    temp_list.sort(key=lambda x: x["representative"])
-    
-    # Assign Isoform IDs
-    transcript_mapping = []
-    for i, item in enumerate(temp_list):
-        isoform_name = f"Isoform {i+1}"
-        header_mapping[item["header"]] = isoform_name
-        for tid in item["all_ids"]:
-            transcript_mapping.append({"Transcript_ID": tid, "Isoform_ID": isoform_name})
-            
-    return header_mapping
-
 def create_membrane_topology_objects(mapping, output_dir):
             
     membrane_topology_file = open(f"{output_dir}/DeepTMHMM_results/predicted_topologies.3line").readlines()
-    membrane_topology = pd.DataFrame(index=mapping.values(), columns=["sequence", "topology"])
+    membrane_topology = pd.DataFrame(index=list(set(mapping.values())), columns=["sequence", "topology"])
 
     # Extracting the alignment and adding it to the dataframe
     aligned_sequences = open(f"{output_dir}/aligned_sequences.fasta").readlines()
     for i, line in enumerate(aligned_sequences):
         if i % 2 == 1:
-            transcript_id = aligned_sequences[i - 1].replace(">", "").strip()
-            isoform_id = mapping[transcript_id]
+            isoform_id = aligned_sequences[i - 1].replace(">", "").strip()
             membrane_topology.at[isoform_id, "sequence"] = line
 
     # Extracting the topology and adding it to the dataframe
     for i, line in enumerate(membrane_topology_file):
         full_topology = ""
+        if i % 3 == 0:
+            isoform_id = line.split(" ")[0].replace(">", "").strip()
+            
         if i % 3 == 2: # The 3-line file is formatted as: [sequence name] [sequence] [topology]
             # Add the topology matching to the alignment (- will be matched with -)
-            isoform_id = mapping[membrane_topology_file[i - 2].split(" ")[0].replace(">", "").strip()]
             topology = line.strip()
             aligned_seq = membrane_topology.at[isoform_id, "sequence"].strip()
             j = 0
@@ -148,7 +115,7 @@ def create_membrane_topology_objects(mapping, output_dir):
     # The data is a list of (start, width) tuples for each feature (fx. [{'-': [(0, 95), (194, 694)],'E': [(95, 99)])
     sequences_data = []
     for i in range(len(membrane_topology)):
-        isoform_id = "Isoform " + str(i + 1)
+        isoform_id = "Isoform_" + str(i + 1)
         topology = membrane_topology.at[isoform_id, "topology"]
         seq_data = {}
         # Identify features in the topology
