@@ -91,7 +91,7 @@ def plot_expression_data(expression_df):
     cancer_types = expression_df.loc[:,"cancer_type"].unique().tolist()
     nb_cancer_types = len(cancer_types)
     rows_count = math.ceil(nb_cancer_types / 2)
-    pixels_per_row = 300
+    pixels_per_row = 600
 
     transcripts_list = expression_df.loc[:,"transcript"].unique().tolist()
 
@@ -99,6 +99,8 @@ def plot_expression_data(expression_df):
                         cols=2 if nb_cancer_types > 1 else 1,
                         shared_yaxes="all",
                         subplot_titles=cancer_types,
+                        vertical_spacing=150 / (rows_count * pixels_per_row), # 150 pixels vertical spacing between plots
+                        horizontal_spacing= 0.03, # 3% horizontal spacing between plots
                         )
 
     isoforms_seen = []
