@@ -26,10 +26,12 @@ def get_transcripts_and_sequences(ensembl_id, output_dir):
     for transcript in transcripts:
         transcripts_ids.append(transcript['id'])
 
+    transcripts_ids.sort()
+
     # 2. Fetch Protein Sequences
     protein_sequences = fetch_protein_sequence(transcripts_ids)
-                
-    unique_sequences = set(protein_sequences.values())
+
+    unique_sequences = list(dict.fromkeys(protein_sequences.values()))
     transcripts_mapping = {}
     with open(f"{output_dir}/isoforms.fasta", "w") as fasta_file:
         for i, seq in enumerate(unique_sequences):
