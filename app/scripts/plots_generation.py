@@ -141,7 +141,7 @@ def plot_expression_data(expression_df):
                         name=isoform,
                         showlegend=False,
                         legendgroup=isoform,
-                    ), 
+                    ),
                     row=i//2+1, 
                     col=i%2+1,
                 )
