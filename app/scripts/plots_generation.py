@@ -24,7 +24,9 @@ def create_topology_plot(mapping, sequences_data, title, x_label):
     }
 
     fig = go.Figure()
-    y_labels = list(dict.fromkeys(mapping.values()))
+    isoforms = list(dict.fromkeys(mapping.values()))
+    y_labels = [transcript_id for isoform in isoforms for transcript_id in isoform.split("<br>")]
+
     added_to_legend = set()
 
     # Loop through sequences (isoforms)
@@ -89,11 +91,10 @@ def plot_expression_data(expression_df):
     print("Creating expression plot...")
 
     cancer_types = expression_df.loc[:,"cancer_type"].unique().tolist()
+
     nb_cancer_types = len(cancer_types)
     rows_count = math.ceil(nb_cancer_types / 2)
     pixels_per_row = 600
-
-    transcripts_list = expression_df.loc[:,"transcript"].unique().tolist()
 
     fig = make_subplots(rows=math.ceil(nb_cancer_types/2), 
                         cols=2 if nb_cancer_types > 1 else 1,
@@ -103,80 +104,61 @@ def plot_expression_data(expression_df):
                         horizontal_spacing= 0.03, # 3% horizontal spacing between plots
                         )
 
-    isoforms_seen = []
+    colors = fig.layout.template.layout.colorway
+
     for i, cancer_type in enumerate(cancer_types):
-        for j, transcript in enumerate(transcripts_list):
-            data_for_each_transcript = expression_df.loc[(expression_df.loc[:,"transcript"] == transcript) & (expression_df.loc[:,"cancer_type"] == cancer_type), :]
-            isoform = data_for_each_transcript.loc[:,"protein"].iloc[0]
+        data_for_each_cancer_type = expression_df.loc[(expression_df.loc[:,"cancer_type"] == cancer_type), :]
+        current_color = colors[i % len(colors)]
 
-            if isoform not in isoforms_seen:
-                isoforms_seen.append(isoform)
-                fig.add_trace(
-                    go.Box(
-                        x=data_for_each_transcript["x"].iloc[0],
-                        q1=data_for_each_transcript["q1"].iloc[0],
-                        q3=data_for_each_transcript["q3"].iloc[0],
-                        median=data_for_each_transcript["median"].iloc[0],
-                        lowerfence=data_for_each_transcript["lowerfence"].iloc[0],
-                        upperfence=data_for_each_transcript["upperfence"].iloc[0],
-                        marker_color=data_for_each_transcript["marker_color"].iloc[0],
-                        name=isoform,
-                        showlegend=True,
-                        legendgroup=isoform,
-                    ), 
-                    row=i//2+1, 
-                    col=i%2+1,
-                )
+        fig.add_trace(
+            go.Box(
+                x=data_for_each_cancer_type["protein"].iloc[0],
+                q1=data_for_each_cancer_type["q1"].iloc[0],
+                q3=data_for_each_cancer_type["q3"].iloc[0],
+                median=data_for_each_cancer_type["median"].iloc[0],
+                lowerfence=data_for_each_cancer_type["lowerfence"].iloc[0],
+                upperfence=data_for_each_cancer_type["upperfence"].iloc[0],
+                showlegend=False,
+                marker_color=current_color,
+            ), 
+            row=i//2+1, 
+            col=i%2+1,
+        )
 
-            else:
-                fig.add_trace(
-                    go.Box(
-                        x=data_for_each_transcript["x"].iloc[0],
-                        q1=data_for_each_transcript["q1"].iloc[0],
-                        q3=data_for_each_transcript["q3"].iloc[0],
-                        median=data_for_each_transcript["median"].iloc[0],
-                        lowerfence=data_for_each_transcript["lowerfence"].iloc[0],
-                        upperfence=data_for_each_transcript["upperfence"].iloc[0],
-                        marker_color=data_for_each_transcript["marker_color"].iloc[0],
-                        name=isoform,
-                        showlegend=False,
-                        legendgroup=isoform,
-                    ),
-                    row=i//2+1, 
-                    col=i%2+1,
-                )
+        proteins = data_for_each_cancer_type["protein"].iloc[0]
+        outliers_lists = data_for_each_cancer_type["y"].iloc[0]
 
-            if len(data_for_each_transcript["y"]) > 0:
-                fig.add_trace(
-                    go.Scatter(
-                        # Repeat the X name for every outlier point
-                        x=[data_for_each_transcript["x"].iloc[0]] * len(data_for_each_transcript["y"].tolist()), 
-                        y=data_for_each_transcript["y"].tolist(),
-                        mode='markers',
-                        marker=dict(
-                            color=data_for_each_transcript["marker_color"].iloc[0],
-                            size=5, # Adjust outlier size as needed
-                            symbol='circle-open' # Optional: make them hollow circles
-                        ),
-                        showlegend=False,
-                        name=isoform,
-                        legendgroup=isoform,
-                    ),
-                    row=i//2+1,
-                    col=i%2+1
-                )
+        # We combine all X and Y coordinates into single flat lists for this trace
+        all_x = []
+        all_y = []
 
+        for protein, values in zip(proteins, outliers_lists):
+            all_x.extend([protein] * len(values))
+            all_y.extend(values)
 
+        # Same color as the box plot
+        fig.add_trace(
+            go.Scatter(
+                x=all_x, 
+                y=all_y,
+                mode='markers',
+                marker=dict(
+                    size=5,
+                    symbol='circle-open',
+                    color=current_color,
+                ),
+                showlegend=False,
+            ),
+            row=i//2+1,
+            col=i%2+1
+        )
 
     fig.update_layout(
         height=rows_count * pixels_per_row, 
-        showlegend=True,
-        legend=dict(
-            orientation="v",
-            yanchor="top",
-            y=1,
-            xanchor="left",
-            x=1.02
+        yaxis=dict(
+            title=dict(
+                text="log2(TPM+1)",
+            )
         ),
     )
 

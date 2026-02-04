@@ -109,87 +109,42 @@ def fetch_protein_sequence(ensembl_ids):
         print(f"\033[31mAn error occurred: {req_err}\033[0m")
         return None
 
-def fetch_cds(ensembl_id):
+def fetch_cdna_length(ensembl_ids):
     """
-    Fetches the CDS (coding sequence) for a given Ensembl ID from the Ensembl REST API.
+    Fetches the cDNA (coding sequence) for a given Ensembl ID from the Ensembl REST API.
 
     Args:
-        ensembl_id (str): The Ensembl transcript or gene ID.
-                          (e.g., ENST00000380152).
+        ensembl_ids (list): list of ensembl ids of the cdnas to fetch the sequence from. 
     Returns:
-        str: The transcript sequence in FASTA format, or None if an error occurs.
+        dict: dictionary of cdna sequences in FASTA format, or None if an error occurs.
     """
     server = "https://rest.ensembl.org"
     
     # The endpoint for retrieving a sequence by its ID.
     # We specify the 'transcript' type to ensure we get the transcript sequence.
-    endpoint = f"/sequence/id/{ensembl_id}"
+    endpoint = "/sequence/id/"
+
+    data = {"ids": ensembl_ids}
     
     # Headers to specify that we want the response in FASTA format.
-    headers = {"Content-Type": "text/plain"}
+    headers = {"Content-Type": "application/json", "Accept": "application/json"}
 
     # Parameters to specify the type of sequence to retrieve.
-    params = {"type": "cds"}
+    params = {"type": "cdna"}
 
-    print(f"Fetching CDS for Ensembl ID: {ensembl_id}...")
+    print(f"Fetching cDNA for Ensembl IDs: {' '.join(ensembl_ids)}...")
 
     try:
         # Make the GET request to the Ensembl API.
-        response = requests.get(server + endpoint, headers=headers, params=params)
+        response = requests.post(server + endpoint, headers=headers, data=json.dumps(data), params=params)
         
         # Raise an exception for bad status codes (4xx or 5xx).
         response.raise_for_status()
+
+        response = response.json()
         
         # If the request was successful, return the sequence text.
-        return response.text
-
-    except requests.exceptions.HTTPError as http_err:
-        # Handle HTTP errors (e.g., 404 Not Found, 500 Server Error).
-        print(f"\033[31mHTTP error occurred: {http_err}\033[0m")
-        print(f"Status Code: {response.status_code}")
-        print("Please check if the Ensembl ID is correct and corresponds to a transcript.")
-        # The response content might contain a more specific error message from the server.
-        print(f"Server response: {response.content.decode()}")
-        return None
-    except requests.exceptions.RequestException as req_err:
-        # Handle other request errors (e.g., network issues).
-        print(f"\033[31mAn error occurred: {req_err}\033[0m")
-        return None
-    
-def fetch_sequence_with_introns_information(ensembl_id):
-    """
-    Fetches the genomic sequence for a given Ensembl ID from the Ensembl REST API.
-
-    Args:
-        ensembl_id (str): The Ensembl transcript or gene ID.
-
-    Returns:
-        str: The transcript sequence in FASTA format, or None if an error occurs. 
-             The sequence is in capital letters for exons and lowercase for introns.
-    """
-    server = "https://rest.ensembl.org"
-    
-    # The endpoint for retrieving a sequence by its ID.
-    # We specify the 'transcript' type to ensure we get the transcript sequence.
-    endpoint = f"/sequence/id/{ensembl_id}"
-    
-    # Headers to specify that we want the response in FASTA format.
-    headers = {"Content-Type": "text/plain"}
-
-    # Parameters to specify the type of sequence to retrieve.
-    params = {"mask_feature": "1"}
-
-    print(f"Fetching sequence with introns information for Ensembl ID: {ensembl_id}...")
-
-    try:
-        # Make the GET request to the Ensembl API.
-        response = requests.get(server + endpoint, headers=headers, params=params)
-        
-        # Raise an exception for bad status codes (4xx or 5xx).
-        response.raise_for_status()
-        
-        # If the request was successful, return the sequence text.
-        return response.text
+        return {item["query"]: len(item["seq"]) for item in response}
 
     except requests.exceptions.HTTPError as http_err:
         # Handle HTTP errors (e.g., 404 Not Found, 500 Server Error).
@@ -204,46 +159,6 @@ def fetch_sequence_with_introns_information(ensembl_id):
         print(f"\033[31mAn error occurred: {req_err}\033[0m")
         return None
 
-def fetch_canonical_uniprot_id(gene_name):
-    """
-    Fetches the canonical UniProt ID for a given gene name from the UniProt REST API.
-
-    Args:
-        gene_name (str): The gene name.
-
-    Returns:
-        str: The canonical UniProt ID, or None if an error occurs.
-    """
-    uniprot_api = "https://rest.uniprot.org/uniprotkb/search"
-    params = {
-        "query": f"gene:{gene_name} AND organism_id:9606", # 9606 = Human
-        "fields": "accession,id",
-        "format": "json"
-    }
-    
-    try:
-        # Make the GET request to the UniProt API.
-        response = requests.get(uniprot_api, params=params)
-        
-        # Raise an exception for bad status codes (4xx or 5xx).
-        response.raise_for_status()
-        
-        # If the request was successful, return the canonical UniProt ID.
-        print("Canonical UniProt ID: ", response.json()["results"][0]["primaryAccession"])
-        return response.json()["results"][0]["primaryAccession"]
-    except requests.exceptions.HTTPError as http_err:
-        # Handle HTTP errors (e.g., 404 Not Found, 500 Server Error).
-        print(f"\033[31mHTTP error occurred: {http_err}\033[0m")
-        print(f"Status Code: {response.status_code}")
-        print("Please check if the canonical Ensembl ID is correct.")
-        # The response content might contain a more specific error message from the server.
-        print(f"Server response: {response.content.decode()}")
-        return None
-    except requests.exceptions.RequestException as req_err:
-        # Handle other request errors (e.g., network issues).
-        print(f"\033[31mAn error occurred: {req_err}\033[0m")
-        return None
-    
 def align_sequences(sequences, email):
     """
     Aligns the given sequences using the Clustal Omega service from EBI.

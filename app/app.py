@@ -8,7 +8,6 @@ from functools import lru_cache
 import shelve
 
 # Initial values for the dropdowns
-isoforms_inital_value = []
 cancer_types_inital_value = []
 
 app = dash.Dash(external_stylesheets=[dbc.themes.BOOTSTRAP])
@@ -104,6 +103,7 @@ def get_expression_data(protein):
     db = shelve.open(f"{base_dir}/files_for_plots/TCGA_GTEx_plotting_data")
     df = db[protein]
     db.close()
+    df = df.groupby(['study', 'cancer_type'], sort=False).agg(list).reset_index()
     return df
 
 @lru_cache(maxsize=10)
@@ -173,15 +173,6 @@ def manage_expression_page(expression_container_id, protein):
 
     return html.Div([
         html.Div([
-                html.P("Select the isoforms to plot:"),
-                dcc.Dropdown(
-                    options=expression_df.loc[:,"protein"].unique(),
-                    value=isoforms_inital_value,
-                    multi=True,
-                    id="expression-isoforms-dropdown",
-                    placeholder="Select or leave empty to plot all isoforms",
-                ),
-                html.Br(),
                 html.P("Select the cancer types to plot:"),
                 dcc.Dropdown(
                     options=expression_df.loc[:,"cancer_type"].unique(),
@@ -197,6 +188,7 @@ def manage_expression_page(expression_container_id, protein):
             id="expression-parameters-container"
         ),
         html.Div([
+            dbc.Button("Reset parameters", id="expression-reset-button", className="me-1"),
             dbc.Spinner(
                 children=dcc.Graph(id="expression-plot"),
                 size="lg",
@@ -210,7 +202,6 @@ def manage_expression_page(expression_container_id, protein):
                     "left": "50%", 
                 },
             ),
-            dbc.Button("Reset parameters", id="expression-reset-button", className="me-1"),
             ],
             id="expression-container",
             style={'display': 'none'}
@@ -222,29 +213,29 @@ def manage_expression_page(expression_container_id, protein):
     Output("expression-container", "style"),
     Output("expression-parameters-container", "style"),
     Output("expression-parameters", "data"),
-    Output("expression-isoforms-dropdown", "value"),
     Output("expression-cancer-type-dropdown", "value"),
     Input("expression-load-button", "n_clicks"),
     Input("expression-reset-button", "n_clicks"),
-    State("expression-isoforms-dropdown", "value"),
     State("expression-cancer-type-dropdown", "value"),
     prevent_initial_call=True,
     optional=True,
 )
-def expression_container_style(_1, _2, isoforms, cancer_types):
+def expression_container_style(_1, _2, cancer_types):
     ctx = dash.callback_context
     trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
     if trigger_id == "expression-load-button":
-        return {'display': 'block'}, {'display': 'none'}, [isoforms, cancer_types], isoforms, cancer_types
+        return {'display': 'block'}, {'display': 'none'}, cancer_types, cancer_types
     elif trigger_id == "expression-reset-button":
-        return {'display': 'none'}, {'display': 'block'}, dash.no_update, isoforms_inital_value, cancer_types_inital_value
+        return {'display': 'none'}, {'display': 'block'}, cancer_types_inital_value, cancer_types_inital_value
 
 @app.callback(
     Output("topology-plot", "figure"),
-    Input("protein-input", "value"),
+    Input("protein-input", "n_submit"),
+    Input("protein-submit", "n_clicks"),
+    State("protein-input", "value"),
     optional=True,
 )
-def topology_plot(protein):
+def topology_plot(_1, _2, protein):
     protein = protein.upper()
     title = "Membrane topology"
     x_label = "Amino acid position in MSA"
@@ -262,19 +253,12 @@ def topology_plot(protein):
 def update_expression_plot(parameters, protein):
     protein = protein.upper()
     expression_df = get_expression_data(protein)
-    isoforms, cancer_types = parameters
-
-    ## Filter logic
-    idx = pd.IndexSlice
-
-    # Filter isoforms
-    if len(isoforms) > 0:
-        expression_df = expression_df.loc[expression_df.loc[:,"protein"].isin(isoforms),:]
+    cancer_types = parameters
 
     # Filter cancer type
     if len(cancer_types) > 0:
         expression_df = expression_df.loc[expression_df.loc[:,"cancer_type"].isin(cancer_types),:]
-
+    
     # Generate the plot
     fig = plot_expression_data(expression_df)
 
