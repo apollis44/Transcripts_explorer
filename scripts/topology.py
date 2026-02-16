@@ -7,7 +7,7 @@ import numpy as np
 import os
 import json
 import biolib
-from scripts.extract_sequences import (
+from .extract_sequences import (
     fetch_transcripts, 
     fetch_protein_sequence, 
     fetch_cdna_length,
