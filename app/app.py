@@ -7,6 +7,7 @@ import os
 from functools import lru_cache
 import shelve
 import numpy as np
+import urllib.parse
 
 # Initial values for the dropdowns
 cancer_types_inital_value = []
@@ -59,9 +60,9 @@ sidebar = html.Div(
     [
         dbc.Nav(
             [
-                dbc.NavLink("Description", href="/", active="exact"),
-                dbc.NavLink("Topology", href="/Topology", active="exact"),
-                dbc.NavLink("Expression", href="/Expression", active="exact"),
+                dbc.NavLink("Description", id="link-description", href="/", active="exact"),
+                dbc.NavLink("Topology", id="link-topology", href="/Topology", active="exact"),
+                dbc.NavLink("Expression", id="link-expression", href="/Expression", active="exact"),
             ],
             vertical=True,
             pills=True,
@@ -80,7 +81,7 @@ content = html.Div(id="page-content")
 
 app.layout = dbc.Container(
     [   
-        dcc.Location(id="url"),
+        dcc.Location(id="url", refresh=False),
         header,
         dbc.Row(
             [
@@ -183,18 +184,67 @@ def get_topology_data(protein):
     db = shelve.open(f"{base_dir}/files_for_plots/membrane_topology_objects")
     sequences_data = db[protein]
     db.close()
-    return mapping, sequences_data
+
+    db = shelve.open(f"{base_dir}/files_for_plots/TCGA_GTEx_plotting_data")
+    df = db[protein]
+    available_transcripts = []
+    for available_transcript in df.loc[:,"protein"].unique():
+        available_transcripts.extend(available_transcript.split("<br>"))
+
+    return mapping, sequences_data, available_transcripts
+
+@lru_cache(maxsize=10)
+def get_query_data(search):
+    search_str = search.lstrip("?") if "?" in search else ""
+    parsed_search = urllib.parse.parse_qs(search_str)
+    if "protein" not in parsed_search:
+        return None
+    return parsed_search["protein"][0]
+
+@app.callback(
+    Output("url", "search"),
+    Input("protein-input", "n_submit"),
+    Input("protein-submit", "n_clicks"),
+    State("url", "search"),
+    State("protein-input", "value"),
+    prevent_initial_call=True,
+)
+def update_query(n_submit, n_clicks, search, protein):
+    if not ctx.triggered:
+        return no_update
+    
+    search_str = search.lstrip("?") if "?" in search else ""
+    parsed_search = urllib.parse.parse_qs(search_str)
+    parsed_search["protein"] = [protein]
+    search_str = urllib.parse.urlencode(parsed_search, doseq=True)
+    return "?" + search_str
+
+@app.callback(
+    [
+        Output("link-description", "href"),
+        Output("link-topology", "href"),
+        Output("link-expression", "href"),
+    ],
+    Input("url", "search")
+)
+def update_nav_links(search):
+    # If search is None or empty, just return the base paths
+    query = search if search else ""
+    
+    # We return the base path + the current query string for each link
+    return f"/{query}", f"/Topology{query}", f"/Expression{query}"
 
 @app.callback(
     Output("page-content", "children"),
     Output("protein-options", "style", allow_duplicate=True),
+    Input("url", "search"),
     Input("url", "pathname"),
-    Input("protein-input", "n_submit"),
-    Input("protein-submit", "n_clicks"),
-    State("protein-input", "value"),
-    prevent_initial_call=True
+    prevent_initial_call=True,
 )
-def render_page_content(pathname, n_submit, n_clicks, protein):
+def render_page_content(query, pathname):
+
+    protein = get_query_data(query)
+
     if protein is None:
         return html.P("Please select a protein"), {"display": "none"}
 
@@ -202,8 +252,6 @@ def render_page_content(pathname, n_submit, n_clicks, protein):
 
     if protein is None:
         return html.P("This protein is not in the database"), {"display": "none"}
-
-    expression_df = get_expression_data(protein)
 
     if pathname == "/":
         return html.P("This is the content of the home page of " + protein + "!"), {"display": "none"}
@@ -233,10 +281,11 @@ def render_page_content(pathname, n_submit, n_clicks, protein):
 @app.callback(
     Output("expression-container", "children"),
     Input("expression-container", "id"),
-    State("protein-input", "value"),
+    State("url", "search"),
     optional=True,
 )
-def manage_expression_page(expression_container_id, protein):
+def manage_expression_page(expression_container_id, search):
+    protein = get_query_data(search)
     protein = getting_gene_names(protein.upper())
     expression_df = get_expression_data(protein)
 
@@ -302,27 +351,27 @@ def expression_container_style(_1, _2, cancer_types):
 
 @app.callback(
     Output("topology-plot", "figure"),
-    Input("protein-input", "n_submit"),
-    Input("protein-submit", "n_clicks"),
-    State("protein-input", "value"),
+    Input("url", "search"),
     optional=True,
 )
-def topology_plot(_1, _2, protein):
+def topology_plot(search):
+    protein = get_query_data(search)
     protein = getting_gene_names(protein.upper())
     title = "Membrane topology"
     x_label = "Amino acid position in MSA"
-    mapping, sequences_data = get_topology_data(protein)
-    fig = create_topology_plot(mapping, sequences_data, title, x_label)
+    mapping, sequences_data, available_transcripts = get_topology_data(protein)
+    fig = create_topology_plot(mapping, sequences_data, available_transcripts, title, x_label)
     return fig
 
 @app.callback(
     Output('expression-plot', 'figure'),
     Input("expression-parameters", "data"),
-    State("protein-input", "value"),
+    State("url", "search"),
     prevent_initial_call=True,
     optional=True,
 )
-def update_expression_plot(parameters, protein):
+def update_expression_plot(parameters, search):
+    protein = get_query_data(search)
     protein = getting_gene_names(protein.upper())
     expression_df = get_expression_data(protein)
     cancer_types = parameters

@@ -3,7 +3,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import math
 
-def create_topology_plot(mapping, sequences_data, title, x_label):
+def create_topology_plot(mapping, sequences_data, available_transcripts, title, x_label):
     print("Creating topology plot...")
     
     # Define colors and labels
@@ -27,10 +27,14 @@ def create_topology_plot(mapping, sequences_data, title, x_label):
     isoforms = list(dict.fromkeys(mapping.values()))
     y_labels = [transcript_id for isoform in isoforms for transcript_id in isoform.split("<br>")]
 
+    y_label_available = [y_label in available_transcripts for y_label in y_labels]
+
     added_to_legend = set()
 
     # Loop through sequences (isoforms)
     for i, seq_data in enumerate(sequences_data):
+        if not y_label_available[i]:
+            continue
         y_val = y_labels[i]
         
         for feature, ranges in seq_data.items():
@@ -52,7 +56,7 @@ def create_topology_plot(mapping, sequences_data, title, x_label):
                 added_to_legend.add(feature)
 
     # Calculate height to match your original logic
-    num_isoforms = len(sequences_data)
+    num_isoforms = len(y_label_available)
     calculated_height = num_isoforms * 50 + 200 
 
     fig.update_layout(
