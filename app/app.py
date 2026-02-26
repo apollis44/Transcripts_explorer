@@ -1,11 +1,12 @@
 import dash
 import dash_bootstrap_components as dbc
-from dash import Input, Output, dcc, html, State, ctx
+from dash import Input, Output, dcc, html, State, ctx, ALL, no_update
 from scripts.plots_generation import create_topology_plot, plot_expression_data
 import pandas as pd
 import os
 from functools import lru_cache
 import shelve
+import numpy as np
 
 # Initial values for the dropdowns
 cancer_types_inital_value = []
@@ -15,9 +16,14 @@ server = app.server
 base_dir = os.path.dirname(os.path.abspath(__file__))
 
 # Get the protein options from the shelve file
-db = shelve.open(f"{base_dir}/files_for_plots/membrane_topology_objects")
-protein_options = list(db.keys())
-db.close()
+db_names = shelve.open(f"{base_dir}/files_for_plots/genes")
+protein_options = list(db_names.keys())
+
+def getting_gene_names(gene_name):
+    if gene_name not in db_names:
+        return None
+    gene_names = db_names[gene_name]
+    return gene_names
 
 header = html.Div(
     [
@@ -25,11 +31,23 @@ header = html.Div(
         html.Div(
             [
                 dbc.Input(id="protein-input", 
-                          list="protein-options", 
                           placeholder="Type a protein name...",
                           autoComplete="off"),
-                html.Datalist(id="protein-options")
-            ],
+                dbc.ListGroup(
+                    id="protein-options",
+                    style={
+                        "position": "absolute", 
+                        "top": "100%", 
+                        "left": 0, 
+                        "width": "100%", 
+                        "zIndex": 1000,
+                        "maxHeight": "200px",
+                        "overflowY": "auto",
+                        "display": "none" # Hidden by default
+                    }
+                ),
+            ], 
+            style={"position": "relative"},
         ),
         dbc.Button("Submit", id="protein-submit", n_clicks=0),
     ],
@@ -88,21 +106,71 @@ app.layout = dbc.Container(
 
 @app.callback(
     Output("protein-options", "children"),
-    Input("protein-input", "value")
+    Output("protein-options", "style"),
+    Input("protein-input", "value"),
+    State({"type": "result-item", "index": ALL}, "n_clicks"),
 )
-def update_protein_options(value):
+def update_protein_options(value, n_clicks):
     if value is None:
-        return []
-    options = [html.Option(value=protein) for protein in protein_options if protein.upper().startswith(value.upper())]
-    if len(options) > 10:
-        options = options[:10] + [html.Option(value="...", disabled=True)]
-    return options
+        return [], {"display": "none"}
+    
+    if n_clicks != [] and (np.array(n_clicks) != None).any():
+        return no_update, no_update
+    
+    options = []
+
+    valid_protein_options = [protein for protein in sorted(protein_options) if protein.upper().startswith(value.upper())]
+    for protein in valid_protein_options[:10]:
+            options.append(
+                dbc.ListGroupItem(
+                    protein,
+                    id={"type": "result-item", "index": protein},
+                    action=True
+                )
+            )
+
+    if len(valid_protein_options) > 10:
+        options.append(
+            dbc.ListGroupItem(
+                f"{len(valid_protein_options) - 10} more options",
+                disabled=True,
+                color="light"
+            )
+        )
+
+    style = {
+        "position": "absolute", "top": "100%", "left": 0, 
+        "width": "100%", "zIndex": 1000, "display": "block"
+    }
+    return options, style
+
+@app.callback(
+    Output("protein-input", "value"),
+    Output("protein-options", "style", allow_duplicate=True),
+    Output("protein-submit", "n_clicks", allow_duplicate=True),
+    Input({"type": "result-item", "index": ALL}, "n_clicks"),
+    State("protein-submit", "n_clicks"),
+    prevent_initial_call=True
+)
+def select_item(n_clicks, protein_submit_n_clicks):
+    if not ctx.triggered:
+        return no_update, no_update, no_update
+
+    if (np.array(n_clicks) == None).all():
+        return no_update, no_update, no_update
+
+    triggered_id = ctx.triggered_id
+    selected_value = triggered_id['index']
+
+    return selected_value, {"display": "none"}, protein_submit_n_clicks + 1
 
 @lru_cache(maxsize=10)
 def get_expression_data(protein):
     db = shelve.open(f"{base_dir}/files_for_plots/TCGA_GTEx_plotting_data")
     df = db[protein]
     db.close()
+    if df is None:
+        return None
     df = df.groupby(['study', 'cancer_type'], sort=False).agg(list).reset_index()
     return df
 
@@ -115,29 +183,30 @@ def get_topology_data(protein):
     db = shelve.open(f"{base_dir}/files_for_plots/membrane_topology_objects")
     sequences_data = db[protein]
     db.close()
-
     return mapping, sequences_data
 
 @app.callback(
     Output("page-content", "children"),
+    Output("protein-options", "style", allow_duplicate=True),
     Input("url", "pathname"),
     Input("protein-input", "n_submit"),
     Input("protein-submit", "n_clicks"),
-    State("protein-input", "value")
+    State("protein-input", "value"),
+    prevent_initial_call=True
 )
 def render_page_content(pathname, n_submit, n_clicks, protein):
     if protein is None:
-        return html.P("Please select a protein")
+        return html.P("Please select a protein"), {"display": "none"}
 
-    protein = protein.upper()
+    protein = getting_gene_names(protein.upper())
 
-    if protein not in protein_options:
-        return html.P("This protein is not in the database")
+    if protein is None:
+        return html.P("This protein is not in the database"), {"display": "none"}
 
     expression_df = get_expression_data(protein)
 
     if pathname == "/":
-        return html.P("This is the content of the home page of " + protein + "!")
+        return html.P("This is the content of the home page of " + protein + "!"), {"display": "none"}
 
     elif pathname == "/Topology":
         return html.Div(
@@ -156,10 +225,10 @@ def render_page_content(pathname, n_submit, n_clicks, protein):
                     },
                 ),
             ]
-        )
+        ), {"display": "none"}
 
     elif pathname == "/Expression":
-        return html.Div(id="expression-container")
+        return html.Div(id="expression-container"), {"display": "none"}
 
 @app.callback(
     Output("expression-container", "children"),
@@ -168,8 +237,11 @@ def render_page_content(pathname, n_submit, n_clicks, protein):
     optional=True,
 )
 def manage_expression_page(expression_container_id, protein):
-    protein = protein.upper()
+    protein = getting_gene_names(protein.upper())
     expression_df = get_expression_data(protein)
+
+    if expression_df is None:
+        return html.P("Expression data is not available for this protein's transcripts")
 
     return html.Div([
         html.Div([
@@ -236,7 +308,7 @@ def expression_container_style(_1, _2, cancer_types):
     optional=True,
 )
 def topology_plot(_1, _2, protein):
-    protein = protein.upper()
+    protein = getting_gene_names(protein.upper())
     title = "Membrane topology"
     x_label = "Amino acid position in MSA"
     mapping, sequences_data = get_topology_data(protein)
@@ -251,7 +323,7 @@ def topology_plot(_1, _2, protein):
     optional=True,
 )
 def update_expression_plot(parameters, protein):
-    protein = protein.upper()
+    protein = getting_gene_names(protein.upper())
     expression_df = get_expression_data(protein)
     cancer_types = parameters
 
