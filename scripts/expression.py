@@ -33,9 +33,6 @@ def extracting_count_expression_data(ensembl_ids):
     # Filter transcripts to those available in the dataset and return their positions
     transcripts_for_expression = [available_transcripts[i] for i in range(len(available_transcripts)) if available_transcripts_without_version[i] in ensembl_ids]
     ensembl_ids_found_in_database = [ensembl_ids[i] for i in range(len(ensembl_ids)) if ensembl_ids[i] in available_transcripts_without_version]
-    for transcript in ensembl_ids:
-        if transcript not in ensembl_ids_found_in_database:
-            print(f"\033[31mWarning: Transcript {transcript} not found in the database.\033[0m")
     expression_df = xena.dataset_fetch(host, dataset, samples, sorted(transcripts_for_expression))
     expression_df = pd.DataFrame(expression_df, columns=samples, index=sorted(ensembl_ids_found_in_database))
 
@@ -64,9 +61,6 @@ def extracting_tpm_expression_data(ensembl_ids):
     # Filter transcripts to those available in the dataset and return their positions
     transcripts_for_expression = [available_transcripts[i] for i in range(len(available_transcripts)) if available_transcripts_without_version[i] in ensembl_ids]
     ensembl_ids_found_in_database = [ensembl_ids[i] for i in range(len(ensembl_ids)) if ensembl_ids[i] in available_transcripts_without_version]
-    for transcript in ensembl_ids:
-        if transcript not in ensembl_ids_found_in_database:
-            print(f"\033[31mWarning: Transcript {transcript} not found in the database.\033[0m")
     expression_df = xena.dataset_fetch(host, dataset, samples, sorted(transcripts_for_expression))
     expression_df = pd.DataFrame(expression_df, columns=samples, index=sorted(ensembl_ids_found_in_database))
 
@@ -212,6 +206,10 @@ def normalize_expression(expression_count_df, normalization_values, transcripts_
 
 def getting_expression_data(ensembl_ids, transcripts_length, mapping):
     expression_count_df_init = extracting_count_expression_data(ensembl_ids)
+
+    if len(expression_count_df_init) == 0:
+        return None
+        
     expression_tpm_df_init = extracting_tpm_expression_data(ensembl_ids)
 
     # Match columns and rows
@@ -242,7 +240,6 @@ def getting_expression_data(ensembl_ids, transcripts_length, mapping):
     return expression_normalized_df
 
 def create_expression_figure_objects(expression_df):
-    print(f"Creating expression figure objects...")
 
     expression_df = expression_df[expression_df["study"].isin(["GTEX", "TCGA"])]
     dd = expression_df.melt(id_vars=["cancer_type", "study"], var_name="protein", value_name="expression")

@@ -10,19 +10,27 @@ import biolib
 from .extract_sequences import (
     fetch_transcripts, 
     fetch_protein_sequence, 
-    fetch_cdna_length,
-    align_sequences
+    fetch_cdna_length
 )
+import time
+import shutil
+import subprocess
+from io import StringIO
+from Bio import SeqIO
 
 def ensure_dir(directory):
     if not os.path.exists(directory):
         os.makedirs(directory)
 
-def get_transcripts_and_sequences(ensembl_id, output_dir):
+def get_transcripts_and_sequences(ensembl_id, output_dir, session):
     ensure_dir(output_dir)
     
     # 1. Fetch Transcripts
-    transcripts = fetch_transcripts(ensembl_id)
+    transcripts = fetch_transcripts(ensembl_id, session)
+
+    if transcripts == []:
+        return None, None, None, None
+
     transcripts_ids = []
     for transcript in transcripts:
         transcripts_ids.append(transcript['id'])
@@ -30,12 +38,17 @@ def get_transcripts_and_sequences(ensembl_id, output_dir):
     transcripts_ids.sort()
 
     # 2. Fetch Transcripts Lengths
-    transcripts_lengths = fetch_cdna_length(transcripts_ids)
+    transcripts_lengths = fetch_cdna_length(transcripts_ids, session)
 
     # 3. Fetch Protein Sequences
-    protein_sequences = fetch_protein_sequence(transcripts_ids)
+    protein_sequences = fetch_protein_sequence(transcripts_ids, session)
 
     unique_sequences = list(dict.fromkeys(protein_sequences.values()))
+    if len(unique_sequences) == 1:
+        one_isoform = True
+    else:
+        one_isoform = False
+
     transcripts_mapping = {}
     with open(f"{output_dir}/isoforms.fasta", "w") as fasta_file:
         for i, seq in enumerate(unique_sequences):
@@ -45,45 +58,79 @@ def get_transcripts_and_sequences(ensembl_id, output_dir):
             for id in ids:
                 transcripts_mapping[id] = "<br>".join(ids)
             
-    return transcripts_ids, transcripts_mapping, transcripts_lengths
+    return transcripts_ids, transcripts_mapping, transcripts_lengths, one_isoform
 
-def align_protein_sequences(email, mapping, output_dir):
+def align_protein_sequences(mapping, output_dir, base_dir):
     ensure_dir(output_dir)
     
     # Align isoforms
-    sequences = open(f"{output_dir}/isoforms.fasta", "r").read()
-    alignment = align_sequences(sequences, email)
-    with open(f"{output_dir}/aligned_sequences.fasta", "w") as file:
-        for i, line in enumerate(alignment.split("\n")):
-            if i == 0: file.write(">" + mapping[line[1:]] + "\n")
-            elif line == "": continue
-            elif line[0] == ">": file.write("\n>" + mapping[line[1:]] + "\n")
-            else: file.write(line.strip())
-            
+    fasta_input = f"{output_dir}/isoforms.fasta"
+    fasta_output = f"{output_dir}/aligned_sequences.fasta"
+
+    # Try to find 'mafft' in the system PATH (works for Linux/Mac/Conda)
+    mafft_executable = shutil.which("mafft")
+
+    # If it's not in the system PATH, use your local Windows version
+    if not mafft_executable:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        mafft_executable = os.path.join(base_dir, "..", "mafft-win", "mafft.bat")
+
+    mafft_args = [
+        mafft_executable, 
+        "--localpair", 
+        "--maxiterate", "1000", 
+        "--quiet", 
+        fasta_input
+    ]
+
+    # Run MAFFT and capture stdout in memory (text=True decodes it to a string)
+    result = subprocess.run(mafft_args, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, check=True)
+
+    records = list(SeqIO.parse(StringIO(result.stdout), "fasta"))
+
+    # Update the IDs using your mapping dictionary
+    for record in records:
+        # Check if the ID exists in your mapping to avoid KeyError
+        if record.id in mapping:
+            record.id = mapping[record.id]
+            # Crucial step: clear the description so Biopython doesn't 
+            # accidentally append the old header info next to your new ID!
+            record.description = "" 
+
+    # Write them to your file without line breaks (fasta-2line)
+    output_file = f"{output_dir}/aligned_sequences.fasta"
+    with open(output_file, "w") as file:
+        SeqIO.write(records, file, "fasta-2line")
+
     return
 
 def run_deeptmhmm(output_dir):
     ensure_dir(f"{output_dir}/DeepTMHMM_results/")
 
-    deeptmhmm = biolib.load('DTU/DeepTMHMM')
+    deeptmhmm = biolib.load('DTU/DeepTMHMM') 
 
-    print("Running DeepTMHMM...")
-    
+    local_temp_fasta = "isoforms_temp.fasta"
+    shutil.copy(f"{output_dir}/isoforms.fasta", local_temp_fasta)
+
     # Check if already run and if it has, empty the directory
     if os.path.exists(f"{output_dir}/DeepTMHMM_results/"):
         files_to_delete = os.listdir(f"{output_dir}/DeepTMHMM_results")
         for file in files_to_delete:
             os.remove(os.path.join(f"{output_dir}/DeepTMHMM_results", file))    
         
-    try:                 
-        job = deeptmhmm.cli(
-            args=f"--fasta {output_dir}/isoforms.fasta", 
-        )
+    try:
+        job = deeptmhmm.cli(args=f'--fasta {local_temp_fasta}', blocking=False)
+
+        while job.get_status() == 'in_progress':
+            time.sleep(1)
+
         job.save_files(f"{output_dir}/DeepTMHMM_results/")
     except Exception as e:
         print(f"Error running DeepTMHMM: {e}")
 
-    print("DeepTMHMM run completed.")
+    finally:
+        os.remove(local_temp_fasta)
+
     return
 
 def create_membrane_topology_objects(transcripts_id, mapping, output_dir):
