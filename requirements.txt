@@ -1,0 +1,11 @@
+pandas
+matplotlib
+seaborn
+numpy
+pybiolib
+biopython
+requests
+xenaPython
+plotly
+dash
+dash-bootstrap-components

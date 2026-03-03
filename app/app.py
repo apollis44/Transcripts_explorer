@@ -1,7 +1,7 @@
 import dash
 import dash_bootstrap_components as dbc
 from dash import Input, Output, dcc, html, State, ctx, ALL, no_update
-from scripts.plots_generation import create_topology_plot, plot_expression_data
+from scripts.plots_generation import *
 import pandas as pd
 import os
 from functools import lru_cache
@@ -61,6 +61,7 @@ sidebar = html.Div(
         dbc.Nav(
             [
                 dbc.NavLink("Description", id="link-description", href="/", active="exact"),
+                dbc.NavLink("Localization", id="link-localization", href="/Localization", active="exact"),
                 dbc.NavLink("Topology", id="link-topology", href="/Topology", active="exact"),
                 dbc.NavLink("Expression", id="link-expression", href="/Expression", active="exact"),
             ],
@@ -166,6 +167,13 @@ def select_item(n_clicks, protein_submit_n_clicks):
     return selected_value, {"display": "none"}, protein_submit_n_clicks + 1
 
 @lru_cache(maxsize=10)
+def get_localization_data(protein):
+    db = shelve.open(f"{base_dir}/files_for_plots/deeploc2_output")
+    df = db[protein]
+    db.close()
+    return df
+
+@lru_cache(maxsize=10)
 def get_expression_data(protein):
     db = shelve.open(f"{base_dir}/files_for_plots/TCGA_GTEx_plotting_data")
     df = db[protein]
@@ -222,6 +230,7 @@ def update_query(n_submit, n_clicks, search, protein):
 @app.callback(
     [
         Output("link-description", "href"),
+        Output("link-localization", "href"),
         Output("link-topology", "href"),
         Output("link-expression", "href"),
     ],
@@ -232,7 +241,7 @@ def update_nav_links(search):
     query = search if search else ""
     
     # We return the base path + the current query string for each link
-    return f"/{query}", f"/Topology{query}", f"/Expression{query}"
+    return f"/{query}", f"/Localization{query}",f"/Topology{query}", f"/Expression{query}"
 
 @app.callback(
     Output("page-content", "children"),
@@ -255,6 +264,25 @@ def render_page_content(query, pathname):
 
     if pathname == "/":
         return html.P("This is the content of the home page of " + protein + "!"), {"display": "none"}
+
+    elif pathname == "/Localization":
+        return html.Div(
+            [
+                dbc.Spinner(
+                    children=dcc.Graph(id="localization-plot"),
+                    size="lg",
+                    color="primary",
+                    type="border",
+                    fullscreen=False,
+                    id="localization-spinner",
+                    spinner_style={
+                        "position": "absolute", 
+                        "top": "20px", 
+                        "left": "50%", 
+                    },
+                ),
+            ]
+        ), {"display": "none"}
 
     elif pathname == "/Topology":
         return html.Div(
@@ -348,6 +376,18 @@ def expression_container_style(_1, _2, cancer_types):
         return {'display': 'block'}, {'display': 'none'}, cancer_types, cancer_types
     elif trigger_id == "expression-reset-button":
         return {'display': 'none'}, {'display': 'block'}, cancer_types_inital_value, cancer_types_inital_value
+
+@app.callback(
+    Output("localization-plot", "figure"),
+    Input("url", "search"),
+    optional=True,
+)
+def localization_plot(search):
+    protein = get_query_data(search)
+    protein = getting_gene_names(protein.upper())
+    localization_data = get_localization_data(protein)
+    fig = create_localization_plot(localization_data)
+    return fig
 
 @app.callback(
     Output("topology-plot", "figure"),

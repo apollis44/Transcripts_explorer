@@ -3,6 +3,28 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import math
 
+def create_localization_plot(localization_data):    
+    # Sort by alphabetical order
+    localization_data.sort_index(inplace=True)
+
+    fig = go.Figure(data=go.Heatmap(
+        z=localization_data.values,
+        x=localization_data.columns.tolist(),
+        y=localization_data.index.tolist(),
+        colorscale='RdBu_r',
+        xgap=0.5,
+        ygap=0.5,
+        colorbar=dict(title='Value')
+    ))
+
+    fig.update_layout(
+        height=len(localization_data)*200,
+        yaxis=dict(autorange='reversed'), # Often needed to keep top-to-bottom orientation
+        margin=dict(l=50, r=50, t=50, b=50)
+    )
+
+    return fig
+
 def create_topology_plot(mapping, sequences_data, available_transcripts, title, x_label):
     print("Creating topology plot...")
     
@@ -57,7 +79,7 @@ def create_topology_plot(mapping, sequences_data, available_transcripts, title, 
 
     # Calculate height to match your original logic
     num_isoforms = len(y_label_available)
-    calculated_height = num_isoforms * 50 + 200 
+    calculated_height = num_isoforms * 50 
 
     fig.update_layout(
         title={
