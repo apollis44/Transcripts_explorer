@@ -12,9 +12,10 @@ def create_localization_plot(localization_data):
         x=localization_data.columns.tolist(),
         y=localization_data.index.tolist(),
         colorscale='RdBu_r',
+        zmin=0,
+        zmax=1,
         xgap=0.5,
         ygap=0.5,
-        colorbar=dict(title='Value')
     ))
 
     fig.update_layout(
@@ -25,9 +26,9 @@ def create_localization_plot(localization_data):
 
     return fig
 
-def create_topology_plot(mapping, sequences_data, available_transcripts, title, x_label):
+def create_topology_plot(mapping, sequences_data, available_transcripts, title, x_label, all_transcripts):
     print("Creating topology plot...")
-    
+
     # Define colors and labels
     color_map = {
         'S': '#FF0000', 
@@ -55,8 +56,9 @@ def create_topology_plot(mapping, sequences_data, available_transcripts, title, 
 
     # Loop through sequences (isoforms)
     for i, seq_data in enumerate(sequences_data):
-        if not y_label_available[i]:
+        if len(all_transcripts) == 0 and not y_label_available[i]:
             continue
+
         y_val = y_labels[i]
         
         for feature, ranges in seq_data.items():
@@ -78,7 +80,10 @@ def create_topology_plot(mapping, sequences_data, available_transcripts, title, 
                 added_to_legend.add(feature)
 
     # Calculate height to match your original logic
-    num_isoforms = len(y_label_available)
+    if len(all_transcripts) == 0:
+        num_isoforms = sum(y_label_available)
+    else:
+        num_isoforms = len(y_labels)
     calculated_height = num_isoforms * 50 
 
     fig.update_layout(

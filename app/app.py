@@ -171,6 +171,7 @@ def get_localization_data(protein):
     db = shelve.open(f"{base_dir}/files_for_plots/deeploc2_output")
     df = db[protein]
     db.close()
+    df = df.iloc[:,:-4] # We exclude the last 4 columns that contains data we don't use
     return df
 
 @lru_cache(maxsize=10)
@@ -287,6 +288,14 @@ def render_page_content(query, pathname):
     elif pathname == "/Topology":
         return html.Div(
             [
+                dbc.Checklist(
+                    options=[
+                        {"label": "All transcripts", "value": "all"},
+                    ],
+                    value=["all"],
+                    switch=True,
+                    id="topology-checklist",
+                ),
                 dbc.Spinner(
                     children=dcc.Graph(id="topology-plot"),
                     size="lg",
@@ -392,15 +401,16 @@ def localization_plot(search):
 @app.callback(
     Output("topology-plot", "figure"),
     Input("url", "search"),
+    Input("topology-checklist", "value"),
     optional=True,
 )
-def topology_plot(search):
+def topology_plot(search, all_transcripts):
     protein = get_query_data(search)
     protein = getting_gene_names(protein.upper())
     title = "Membrane topology"
     x_label = "Amino acid position in MSA"
     mapping, sequences_data, available_transcripts = get_topology_data(protein)
-    fig = create_topology_plot(mapping, sequences_data, available_transcripts, title, x_label)
+    fig = create_topology_plot(mapping, sequences_data, available_transcripts, title, x_label, all_transcripts)
     return fig
 
 @app.callback(
