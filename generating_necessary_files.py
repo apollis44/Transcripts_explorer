@@ -24,9 +24,9 @@ out_dir = "./files"
 out_dir_for_plots = "./app/files_for_plots"
 
 # Proteins we want to show
-genes = pd.read_csv("./scripts/genes.txt", index_col=0)
+genes = pd.read_csv("./scripts/files/genes.txt", index_col=0)
 genes_id = genes.index.unique()
-with open(out_dir + "/already_explored_genes.pkl", "rb") as f:
+with open("./scripts/files/already_explored_genes.pkl", "rb") as f:
     already_explored_genes = pickle.load(f)
 
 # Token for biolib
