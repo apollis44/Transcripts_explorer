@@ -16,6 +16,7 @@ from scripts.expression import (
 import shelve
 import requests
 import subprocess
+import xenaPython as xena
 
 ## Variables
 
@@ -38,6 +39,23 @@ session = requests.Session()
 session.headers.update({
     "User-Agent": f"PythonBioScript/1.0 ({email})"
 })
+
+# Precomputed heavy xenaPython steps
+
+# Getting the right dataset from Xena
+host = "https://toil.xenahubs.net" # Public hub with both TCGA and GTEx data
+cohort = "TCGA TARGET GTEx" # Cohort name
+samples = xena.cohort_samples(host, cohort, None)
+dataset = "TcgaTargetGtex_rsem_isoform_tpm" # Dataset name
+metadata_dataset = "TcgaTargetGTEX_phenotype.txt"
+fields = ["_study", "detailed_category"] # Fields to extract
+
+# We extract the list of all transcripts ids available in the dataset
+available_transcripts = xena.dataset_field(host, dataset)
+
+# The dataset contains codes for categorical fields, we convert them to their actual values
+# To do so, we fetch the codes from Xena and create a mapping dictionary
+codes = xena.field_codes(host, metadata_dataset, fields)
 
 # Running the analysis for each protein
 for gene_id in genes_id:
@@ -101,7 +119,7 @@ for gene_id in genes_id:
         db[gene_names] = membrane_topology_object
 
     # Getting expression data
-    expression_normalized_df = getting_expression_data(transcripts_id, transcripts_length, mapping)
+    expression_normalized_df = getting_expression_data(transcripts_id, transcripts_length, mapping, samples, available_transcripts, codes)
     if expression_normalized_df is None:
         TCGA_GTEx_plotting_data = None
     else:
@@ -112,7 +130,12 @@ for gene_id in genes_id:
         db[gene_names] = TCGA_GTEx_plotting_data
 
     # Running deeploc2 in command lines
-    subprocess.run(f"deeploc2 -f {out_dir}/isoforms.fasta -o {out_dir}/deeploc2_output", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    command = [
+        "deeploc2", 
+        "-f", f"{out_dir}/isoforms.fasta", 
+        "-o", f"{out_dir}/deeploc2_output"
+    ]
+    subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     # Reading deeploc2 output
     deeploc2_output_name = os.listdir(f"{out_dir}/deeploc2_output")[0]

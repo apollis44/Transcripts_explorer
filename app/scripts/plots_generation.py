@@ -121,34 +121,34 @@ def create_topology_plot(mapping, sequences_data, available_transcripts, title, 
 def plot_expression_data(expression_df):
     print("Creating expression plot...")
 
-    cancer_types = expression_df.loc[:,"cancer_type"].unique().tolist()
+    tissue_types = expression_df.loc[:,"tisue_type"].unique().tolist()
 
-    nb_cancer_types = len(cancer_types)
-    rows_count = math.ceil(nb_cancer_types / 2)
+    nb_tissue_types = len(tissue_types)
+    rows_count = math.ceil(nb_tissue_types / 2)
     pixels_per_row = 600
 
-    fig = make_subplots(rows=math.ceil(nb_cancer_types/2), 
-                        cols=2 if nb_cancer_types > 1 else 1,
+    fig = make_subplots(rows=math.ceil(nb_tissue_types/2), 
+                        cols=2 if nb_tissue_types > 1 else 1,
                         shared_yaxes="all",
-                        subplot_titles=cancer_types,
+                        subplot_titles=tissue_types,
                         vertical_spacing=150 / (rows_count * pixels_per_row), # 150 pixels vertical spacing between plots
                         horizontal_spacing= 0.03, # 3% horizontal spacing between plots
                         )
 
     colors = fig.layout.template.layout.colorway
 
-    for i, cancer_type in enumerate(cancer_types):
-        data_for_each_cancer_type = expression_df.loc[(expression_df.loc[:,"cancer_type"] == cancer_type), :]
+    for i, tissue_type in enumerate(tissue_types):
+        data_for_each_tissue_type = expression_df.loc[(expression_df.loc[:,"tissue_type"] == tissue_type), :]
         current_color = colors[i % len(colors)]
 
         fig.add_trace(
             go.Box(
-                x=data_for_each_cancer_type["protein"].iloc[0],
-                q1=data_for_each_cancer_type["q1"].iloc[0],
-                q3=data_for_each_cancer_type["q3"].iloc[0],
-                median=data_for_each_cancer_type["median"].iloc[0],
-                lowerfence=data_for_each_cancer_type["lowerfence"].iloc[0],
-                upperfence=data_for_each_cancer_type["upperfence"].iloc[0],
+                x=data_for_each_tissue_type["protein"].iloc[0],
+                q1=data_for_each_tissue_type["q1"].iloc[0],
+                q3=data_for_each_tissue_type["q3"].iloc[0],
+                median=data_for_each_tissue_type["median"].iloc[0],
+                lowerfence=data_for_each_tissue_type["lowerfence"].iloc[0],
+                upperfence=data_for_each_tissue_type["upperfence"].iloc[0],
                 showlegend=False,
                 marker_color=current_color,
             ), 
@@ -156,8 +156,8 @@ def plot_expression_data(expression_df):
             col=i%2+1,
         )
 
-        proteins = data_for_each_cancer_type["protein"].iloc[0]
-        outliers_lists = data_for_each_cancer_type["y"].iloc[0]
+        proteins = data_for_each_tissue_type["protein"].iloc[0]
+        outliers_lists = data_for_each_tissue_type["y"].iloc[0]
 
         # We combine all X and Y coordinates into single flat lists for this trace
         all_x = []
