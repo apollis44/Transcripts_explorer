@@ -12,22 +12,23 @@ TranscriptExplorer is a comprehensive pipeline and visualization tool designed t
 ## Setup
 
 1. Clone the repository.
-2. Install the required Python dependencies:
+2. Unzip DeepTMHMM folder.
+3. Install the required Python dependencies:
    ```bash
    pip install -r requirements.txt
    pip install deeploc-2.1.All.tar.gz
    ```
-3. Install MAFFT (Multiple-Sequence Alignment program):
+4. Install MAFFT (Multiple-Sequence Alignment program):
    - **Windows:** MAFFT is already included in this repository and accessible.
    - **Linux/macOS:** You must install MAFFT on your system.
      - On Ubuntu/Debian: `sudo apt-get install mafft`
      - On macOS (Homebrew): `brew install mafft`
      - Or download from the [MAFFT website](https://mafft.cbrc.jp/alignment/software/).
 
-4. Generate the data mapping and objects:
+5. Generate the data mapping and objects:
    ```bash
    python generating_necessary_files.py
    ```
    *Note: Ensure you configure your Biolib API token and use your own email in the script.*
 
-5. To view the results interactively, navigate to the `app/` directory and run the Dash server. (See `app/README.md` for more details).
+6. To view the results interactively, navigate to the `app/` directory and run the Dash server. (See `app/README.md` for more details).

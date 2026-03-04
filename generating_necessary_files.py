@@ -17,6 +17,10 @@ import shelve
 import requests
 import subprocess
 import xenaPython as xena
+from DeepTMHMM.predict_api import (
+    load_models,
+    predict_from_fasta
+)
 
 ## Variables
 
@@ -105,11 +109,17 @@ for gene_id in genes_id:
                 else: file.write(line.strip())
 
     # Running DeepTMHMM
-    run_deeptmhmm(out_dir)
+    predict_from_fasta(f"{out_dir}/isoforms.fasta", f"{out_dir}/deeptmhmm_output", stats)
+
+    print("Time to run DeepTMHMM: " + str(time.time() - t))
+    t = time.time()
 
     # Storing transcripts to isoforms mapping
     with shelve.open(out_dir_for_plots + "/transcripts_to_isoforms_mapping") as db:
         db[gene_names] = mapping
+
+    # Delete deeptmhmm output
+    subprocess.run(f"rm -r {out_dir}/deeptmhmm_output")
 
     # Creating membrane topology objects
     membrane_topology_object = create_membrane_topology_objects(transcripts_id, mapping, out_dir)
