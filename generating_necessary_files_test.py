@@ -17,6 +17,7 @@ import shelve
 import requests
 import subprocess
 import time
+import xenaPython as xena
 
 ## Variables
 
@@ -39,6 +40,23 @@ session = requests.Session()
 session.headers.update({
     "User-Agent": f"PythonBioScript/1.0 ({email})"
 })
+
+# Precomputed heavy xenaPython steps
+
+# Getting the right dataset from Xena
+host = "https://toil.xenahubs.net" # Public hub with both TCGA and GTEx data
+cohort = "TCGA TARGET GTEx" # Cohort name
+samples = xena.cohort_samples(host, cohort, None)
+dataset = "TcgaTargetGtex_rsem_isoform_tpm" # Dataset name
+metadata_dataset = "TcgaTargetGTEX_phenotype.txt"
+fields = ["_study", "detailed_category"] # Fields to extract
+
+# We extract the list of all transcripts ids available in the dataset
+available_transcripts = xena.dataset_field(host, dataset)
+
+# The dataset contains codes for categorical fields, we convert them to their actual values
+# To do so, we fetch the codes from Xena and create a mapping dictionary
+codes = xena.field_codes(host, metadata_dataset, fields)
 
 genes_id = ["ENSG00000156738"] # Testing on one gene only
 # Running the analysis for each protein
@@ -115,21 +133,23 @@ for gene_id in genes_id:
         db[gene_names] = membrane_topology_object
 
     # Getting expression data
-    expression_normalized_df = getting_expression_data(transcripts_id, transcripts_length, mapping)
+    expression_normalized_df = getting_expression_data(transcripts_id, transcripts_length, mapping, samples, available_transcripts, codes)
     if expression_normalized_df is None:
         TCGA_GTEx_plotting_data = None
     else:
         TCGA_GTEx_plotting_data = create_expression_figure_objects(expression_normalized_df)
+        TCGA_GTEx_plotting_data.to_csv(f"{out_dir}/_expression_data.csv", index=False)
 
     print("Time to get the expression data: " + str(time.time() - t))
     t = time.time()
 
-    # Storing expression data
-    with shelve.open(out_dir_for_plots + "/TCGA_GTEx_plotting_data") as db:
-        db[gene_names] = TCGA_GTEx_plotting_data
-
     # Running deeploc2 in command lines
-    subprocess.run(f"deeploc2 -f {out_dir}/isoforms.fasta -o {out_dir}/deeploc2_output", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    command = [
+        "deeploc2", 
+        "-f", f"{out_dir}/isoforms.fasta", 
+        "-o", f"{out_dir}/deeploc2_output"
+    ]
+    subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     # Reading deeploc2 output
     deeploc2_output_name = os.listdir(f"{out_dir}/deeploc2_output")[0]
@@ -142,11 +162,3 @@ for gene_id in genes_id:
 
     print("Time to run deeploc2: " + str(time.time() - t))
     t = time.time()
-
-    # Storing deeploc2 output
-    with shelve.open(out_dir_for_plots + "/deeploc2_output") as db:
-        db[gene_names] = deeploc2_output
-
-    # Storing already explored genes
-    with open(out_dir + "/already_explored_genes.pkl", "wb") as f:
-        pickle.dump(already_explored_genes, f)

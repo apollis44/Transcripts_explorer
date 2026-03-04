@@ -10,12 +10,14 @@ import json
 # Bypass SSL certificate verification for Xena Hub
 ssl._create_default_https_context = ssl._create_unverified_context
 
-def extracting_tpm_expression_data(ensembl_ids):
+def extracting_tpm_expression_data(ensembl_ids, samples, available_transcripts):
     """
     Given a list of Ensembl transcript IDs, extract their expression data from the TCGA and GTEx datasets.
 
     Args:
         ensembl_ids (list): A list of Ensembl transcript IDs.
+        samples (list): A list of samples to extract expression data for.
+        available_transcripts (list): A list of all transcripts available in the dataset.
     Returns:
         pd.DataFrame: A DataFrame containing the expression data for the specified transcripts.
     """
@@ -23,11 +25,8 @@ def extracting_tpm_expression_data(ensembl_ids):
     # Getting the right dataset from Xena
     host = "https://toil.xenahubs.net" # Public hub with both TCGA and GTEx data
     cohort = "TCGA TARGET GTEx" # Cohort name
-    samples = xena.cohort_samples(host, cohort, None)
     dataset = "TcgaTargetGtex_rsem_isoform_tpm" # Dataset name
 
-    # We extract the list of all transcripts ids available in the dataset
-    available_transcripts = xena.dataset_field(host, dataset)
     available_transcripts_without_version = [t.split('.')[0] for t in available_transcripts]  # Remove version numbers
 
     # Filter transcripts to those available in the dataset and return their positions
@@ -42,31 +41,29 @@ def convert_str_to_dict(s):
     s_list = s.split("\t") 
     return {i: s_list[i] for i in range(len(s_list))}
 
-def get_samples_metadata():
+def get_samples_metadata(samples, codes):
     """
     Fetch and process the samples metadata from the TCGA and GTEx datasets.
 
+    Args:
+        samples (list): A list of samples to extract metadata for.
+        codes (list): A list of codes to convert the metadata to their actual values.
     Returns:
         pd.DataFrame: A DataFrame containing the phenotype metadata.
         pd.DataFrame: A DataFrame containing the survival metadata.
     """
 
     # Getting the right dataset from Xena
-    host = "https://kidsfirst.xenahubs.net" # Public hub with both TCGA and GTEx data
-    cohort = "TCGA TARGET GTEx KidsFirst" # Cohort name
-    samples = xena.cohort_samples(host, cohort, None)
-    metadata_dataset = "TCGA_target_GTEX_KF/phenotype.txt" # Metadata dataset name
-    fields = ["_study", "main_category"] # Fields to extract
+    host = "https://toil.xenahubs.net" # Public hub with both TCGA and GTEx data
+    cohort = "TCGA TARGET GTEx" # Cohort name
+    metadata_dataset = "TcgaTargetGTEX_phenotype.txt" # Metadata dataset name
+    fields = ["_study", "detailed_category"] # Fields to extract
 
     # Fetch the metadata for the samples
     samples_metadata_phenotype = xena.dataset_fetch(host, metadata_dataset, samples, fields)
     samples_metadata_phenotype = pd.DataFrame(samples_metadata_phenotype, columns=samples, index=fields).T
     samples_metadata_phenotype = samples_metadata_phenotype.map(lambda x: np.nan if x == "NaN" else x) # Create NaN values to remove later
     samples_metadata_phenotype.dropna(inplace=True) # Remove samples with NaN values
-
-    # The dataset contains codes for categorical fields, we convert them to their actual values
-    # To do so, we fetch the codes from Xena and create a mapping dictionary
-    codes = xena.field_codes(host, metadata_dataset, fields)
 
     for i, field in enumerate(fields):
         codes_field = codes[i]['code']
@@ -100,13 +97,13 @@ def merge_expression_and_metadata(expression_df, samples_metadata_phenotype):
     samples_metadata_phenotype = samples_metadata_phenotype.loc[samples_to_keep]
 
     # We add the metadata columns to the expression dataframe
-    expression_df["cancer_type"] = samples_metadata_phenotype.loc[expression_df.index, "main_category"]
+    expression_df["tissue_type"] = samples_metadata_phenotype.loc[expression_df.index, "_study"] + " " + samples_metadata_phenotype.loc[expression_df.index, "detailed_category"]
     expression_df["study"] = samples_metadata_phenotype.loc[expression_df.index, "_study"]
 
     return expression_df
 
-def getting_expression_data(ensembl_ids, transcripts_length, mapping):
-    expression_tpm_df_init = extracting_tpm_expression_data(ensembl_ids)
+def getting_expression_data(ensembl_ids, transcripts_length, mapping, samples, available_transcripts, codes):
+    expression_tpm_df_init = extracting_tpm_expression_data(ensembl_ids, samples, available_transcripts)
 
     if len(expression_tpm_df_init) == 0:
         return None
@@ -129,7 +126,7 @@ def getting_expression_data(ensembl_ids, transcripts_length, mapping):
     # We normalize the expression data to log2(tpm + 1)
     expression_normalized_df = expression_tpm_df_merged.map(lambda x: np.log2(x + 1))
 
-    metadata_df_phenotype_init = get_samples_metadata()
+    metadata_df_phenotype_init = get_samples_metadata(samples, codes)
     expression_normalized_df = merge_expression_and_metadata(expression_normalized_df, metadata_df_phenotype_init)
 
     return expression_normalized_df
@@ -137,9 +134,9 @@ def getting_expression_data(ensembl_ids, transcripts_length, mapping):
 def create_expression_figure_objects(expression_df):
 
     expression_df = expression_df[expression_df["study"].isin(["GTEX", "TCGA"])]
-    dd = expression_df.melt(id_vars=["cancer_type", "study"], var_name="protein", value_name="expression")
+    dd = expression_df.melt(id_vars=["tissue_type", "study"], var_name="protein", value_name="expression")
 
-    dd = dd.sort_values(by=["study", "cancer_type"])
+    dd = dd.sort_values(by=["study", "tissue_type"])
     proteins = dd.loc[:, "protein"].unique()
 
     def get_boxplot_stats(group_data):
@@ -176,6 +173,6 @@ def create_expression_figure_objects(expression_df):
             "y": fliers,
         })
     
-    dd = dd.groupby(['study', 'cancer_type', 'protein'], sort=False)['expression'].apply(get_boxplot_stats).unstack().reset_index()
+    dd = dd.groupby(['study', 'tissue_type', 'protein'], sort=False)['expression'].apply(get_boxplot_stats).unstack().reset_index()
 
     return dd

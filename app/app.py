@@ -10,7 +10,7 @@ import numpy as np
 import urllib.parse
 
 # Initial values for the dropdowns
-cancer_types_inital_value = []
+tissue_types_inital_value = []
 
 app = dash.Dash(external_stylesheets=[dbc.themes.BOOTSTRAP])
 server = app.server
@@ -181,7 +181,7 @@ def get_expression_data(protein):
     db.close()
     if df is None:
         return None
-    df = df.groupby(['study', 'cancer_type'], sort=False).agg(list).reset_index()
+    df = df.groupby(['study', 'tissue_type'], sort=False).agg(list).reset_index()
     return df
 
 @lru_cache(maxsize=10)
@@ -333,8 +333,8 @@ def manage_expression_page(expression_container_id, search):
         html.Div([
                 html.P("Select the cancer types to plot:"),
                 dcc.Dropdown(
-                    options=expression_df.loc[:,"cancer_type"].unique(),
-                    value=cancer_types_inital_value,
+                    options=expression_df.loc[:,"tissue_type"].unique(),
+                    value=tissue_types_inital_value,
                     multi=True,
                     id="expression-cancer-type-dropdown",
                     placeholder="Select or leave empty to plot all cancer types",
@@ -378,13 +378,13 @@ def manage_expression_page(expression_container_id, search):
     prevent_initial_call=True,
     optional=True,
 )
-def expression_container_style(_1, _2, cancer_types):
+def expression_container_style(_1, _2, tissue_types):
     ctx = dash.callback_context
     trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
     if trigger_id == "expression-load-button":
-        return {'display': 'block'}, {'display': 'none'}, cancer_types, cancer_types
+        return {'display': 'block'}, {'display': 'none'}, tissue_types, tissue_types
     elif trigger_id == "expression-reset-button":
-        return {'display': 'none'}, {'display': 'block'}, cancer_types_inital_value, cancer_types_inital_value
+        return {'display': 'none'}, {'display': 'block'}, tissue_types_inital_value, tissue_types_inital_value
 
 @app.callback(
     Output("localization-plot", "figure"),
@@ -424,11 +424,11 @@ def update_expression_plot(parameters, search):
     protein = get_query_data(search)
     protein = getting_gene_names(protein.upper())
     expression_df = get_expression_data(protein)
-    cancer_types = parameters
+    tissue_types = parameters
 
     # Filter cancer type
-    if len(cancer_types) > 0:
-        expression_df = expression_df.loc[expression_df.loc[:,"cancer_type"].isin(cancer_types),:]
+    if len(tissue_types) > 0:
+        expression_df = expression_df.loc[expression_df.loc[:,"tissue_type"].isin(tissue_types),:]
     
     # Generate the plot
     fig = plot_expression_data(expression_df)
