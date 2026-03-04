@@ -18,6 +18,10 @@ import requests
 import subprocess
 import time
 import xenaPython as xena
+from DeepTMHMM.predict_api import (
+    load_models,
+    predict_from_fasta
+)
 
 ## Variables
 
@@ -57,6 +61,9 @@ available_transcripts = xena.dataset_field(host, dataset)
 # The dataset contains codes for categorical fields, we convert them to their actual values
 # To do so, we fetch the codes from Xena and create a mapping dictionary
 codes = xena.field_codes(host, metadata_dataset, fields)
+
+# Loading DeepTMHMM models
+stats = load_models()
 
 genes_id = ["ENSG00000156738"] # Testing on one gene only
 # Running the analysis for each protein
@@ -113,7 +120,7 @@ for gene_id in genes_id:
     t = time.time()
 
     # Running DeepTMHMM
-    run_deeptmhmm(out_dir)
+    predict_from_fasta(f"{out_dir}/isoforms.fasta", f"{out_dir}/deeptmhmm_output", stats)
 
     print("Time to run DeepTMHMM: " + str(time.time() - t))
     t = time.time()
@@ -121,6 +128,9 @@ for gene_id in genes_id:
     # Storing transcripts to isoforms mapping
     with shelve.open(out_dir_for_plots + "/transcripts_to_isoforms_mapping") as db:
         db[gene_names] = mapping
+
+    # Delete deeptmhmm output
+    subprocess.run(f"rm -r {out_dir}/deeptmhmm_output")
 
     # Creating membrane topology objects
     membrane_topology_object = create_membrane_topology_objects(transcripts_id, mapping, out_dir)
@@ -138,7 +148,6 @@ for gene_id in genes_id:
         TCGA_GTEx_plotting_data = None
     else:
         TCGA_GTEx_plotting_data = create_expression_figure_objects(expression_normalized_df)
-        TCGA_GTEx_plotting_data.to_csv(f"{out_dir}/_expression_data.csv", index=False)
 
     print("Time to get the expression data: " + str(time.time() - t))
     t = time.time()
