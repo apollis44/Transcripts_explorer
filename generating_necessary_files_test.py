@@ -1,4 +1,6 @@
 import os
+import shutil
+import sys
 import matplotlib.pyplot as plt
 import pandas as pd
 import pickle
@@ -18,6 +20,10 @@ import requests
 import subprocess
 import time
 import xenaPython as xena
+
+deeptmhmm_path = os.path.abspath("./DeepTMHMM")
+sys.path.append(deeptmhmm_path)
+
 from DeepTMHMM.predict_api import (
     load_models,
     predict_from_fasta
@@ -48,6 +54,7 @@ session.headers.update({
 # Precomputed heavy xenaPython steps
 
 # Getting the right dataset from Xena
+print("Getting the right dataset from Xena...")
 host = "https://toil.xenahubs.net" # Public hub with both TCGA and GTEx data
 cohort = "TCGA TARGET GTEx" # Cohort name
 samples = xena.cohort_samples(host, cohort, None)
@@ -63,11 +70,13 @@ available_transcripts = xena.dataset_field(host, dataset)
 codes = xena.field_codes(host, metadata_dataset, fields)
 
 # Loading DeepTMHMM models
+print("Loading DeepTMHMM models...")
 stats = load_models()
 
-genes_id = ["ENSG00000156738"] # Testing on one gene only
+genes_id = ["ENSG00000156738"] # Testing on one gene only (CD20)
 # Running the analysis for each protein
 for gene_id in genes_id:
+    print(gene_id)
     t = time.time()
     gene_names = gene_id
 
@@ -119,8 +128,12 @@ for gene_id in genes_id:
     print("Time to align the protein sequences: " + str(time.time() - t))
     t = time.time()
 
+    # Clear deeptmhmm output
+    if os.path.isdir(f"{out_dir}/DeepTMHMM_results"):   
+        shutil.rmtree(f"{out_dir}/DeepTMHMM_results")
+
     # Running DeepTMHMM
-    predict_from_fasta(f"{out_dir}/isoforms.fasta", f"{out_dir}/deeptmhmm_output", stats)
+    predict_from_fasta(f"{out_dir}/isoforms.fasta", f"{out_dir}/DeepTMHMM_results", stats)
 
     print("Time to run DeepTMHMM: " + str(time.time() - t))
     t = time.time()
@@ -128,9 +141,6 @@ for gene_id in genes_id:
     # Storing transcripts to isoforms mapping
     with shelve.open(out_dir_for_plots + "/transcripts_to_isoforms_mapping") as db:
         db[gene_names] = mapping
-
-    # Delete deeptmhmm output
-    subprocess.run(f"rm -r {out_dir}/deeptmhmm_output")
 
     # Creating membrane topology objects
     membrane_topology_object = create_membrane_topology_objects(transcripts_id, mapping, out_dir)
