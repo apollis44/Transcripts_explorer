@@ -1,4 +1,6 @@
 import os
+import shutil
+import sys
 import matplotlib.pyplot as plt
 import pandas as pd
 import pickle
@@ -17,6 +19,10 @@ import shelve
 import requests
 import subprocess
 import xenaPython as xena
+
+deeptmhmm_path = os.path.abspath("./DeepTMHMM")
+sys.path.append(deeptmhmm_path)
+
 from DeepTMHMM.predict_api import (
     load_models,
     predict_from_fasta
@@ -44,7 +50,7 @@ session.headers.update({
     "User-Agent": f"PythonBioScript/1.0 ({email})"
 })
 
-# Precomputed heavy xenaPython steps
+# Precomputing heavy xenaPython steps
 
 # Getting the right dataset from Xena
 host = "https://toil.xenahubs.net" # Public hub with both TCGA and GTEx data
@@ -61,11 +67,14 @@ available_transcripts = xena.dataset_field(host, dataset)
 # To do so, we fetch the codes from Xena and create a mapping dictionary
 codes = xena.field_codes(host, metadata_dataset, fields)
 
-# Running the analysis for each protein
+# Loading DeepTMHMM models
+stats = load_models()
+
+######## Running the analysis for each protein ########
 for gene_id in genes_id:
     gene_names = gene_id
 
-    # Finding gene name and synonyms
+    ######## Finding gene name and synonyms ########
     if isinstance(genes.loc[gene_id,"Gene name"], pd.Series):
         gene_names += "|" + genes.loc[gene_id,"Gene name"].iloc[0]
 
@@ -87,15 +96,24 @@ for gene_id in genes_id:
     print(f"Processing {gene_id}... ({len(already_explored_genes)} / {len(genes_id)})")
     ensure_dir(out_dir)
 
-    # Getting transcripts and sequences
+
+
+
+
+
+    ######## Getting transcripts and sequences ########
     transcripts_id, mapping, transcripts_length, one_isoform = get_transcripts_and_sequences(gene_id, out_dir, session)
     
     if transcripts_id == None: # The gene encodes no valid protein
-        with open(out_dir + "/already_explored_genes.pkl", "wb") as f:
+        with open("./scripts/files_genes/already_explored_genes.pkl", "wb") as f:
             pickle.dump(already_explored_genes, f)
         continue
 
-    # Aligning protein sequences
+
+
+
+
+    ######## Aligning protein sequences ########
     if not one_isoform:
         base_dir = os.path.dirname(os.path.abspath(__file__))
         align_protein_sequences(mapping, out_dir, base_dir)
@@ -108,18 +126,22 @@ for gene_id in genes_id:
                 elif line[0] == ">": file.write("\n>" + mapping[line[1:]] + "\n")
                 else: file.write(line.strip())
 
-    # Running DeepTMHMM
-    predict_from_fasta(f"{out_dir}/isoforms.fasta", f"{out_dir}/deeptmhmm_output", stats)
 
-    print("Time to run DeepTMHMM: " + str(time.time() - t))
-    t = time.time()
+
+
+
+
+    ######## Running DeepTMHMM ########
+    
+    # Clearing previous deeptmhmm output
+    if os.path.isdir(f"{out_dir}/DeepTMHMM_results"):   
+        shutil.rmtree(f"{out_dir}/DeepTMHMM_results")
+
+    predict_from_fasta(f"{out_dir}/isoforms.fasta", f"{out_dir}/DeepTMHMM_results", stats)
 
     # Storing transcripts to isoforms mapping
     with shelve.open(out_dir_for_plots + "/transcripts_to_isoforms_mapping") as db:
         db[gene_names] = mapping
-
-    # Delete deeptmhmm output
-    subprocess.run(f"rm -r {out_dir}/deeptmhmm_output")
 
     # Creating membrane topology objects
     membrane_topology_object = create_membrane_topology_objects(transcripts_id, mapping, out_dir)
@@ -128,7 +150,13 @@ for gene_id in genes_id:
     with shelve.open(out_dir_for_plots + "/membrane_topology_objects") as db:
         db[gene_names] = membrane_topology_object
 
-    # Getting expression data
+
+
+
+
+
+
+    ######## Getting expression data ########
     expression_normalized_df = getting_expression_data(transcripts_id, transcripts_length, mapping, samples, available_transcripts, codes)
     if expression_normalized_df is None:
         TCGA_GTEx_plotting_data = None
@@ -139,7 +167,12 @@ for gene_id in genes_id:
     with shelve.open(out_dir_for_plots + "/TCGA_GTEx_plotting_data") as db:
         db[gene_names] = TCGA_GTEx_plotting_data
 
-    # Running deeploc2 in command lines
+
+
+
+
+
+    ######## Running deeploc2 ########
     command = [
         "deeploc2", 
         "-f", f"{out_dir}/isoforms.fasta", 
@@ -160,6 +193,12 @@ for gene_id in genes_id:
     with shelve.open(out_dir_for_plots + "/deeploc2_output") as db:
         db[gene_names] = deeploc2_output
 
-    # Storing already explored genes
-    with open(out_dir + "/already_explored_genes.pkl", "wb") as f:
+
+
+
+
+
+
+    ######## Storing already explored genes ########
+    with open("./scripts/files_genes/already_explored_genes.pkl", "wb") as f:
         pickle.dump(already_explored_genes, f)
