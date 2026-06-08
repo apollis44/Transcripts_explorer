@@ -269,6 +269,7 @@ def render_page_content(query, pathname):
 
     # Check if the gene encodes any valid protein
     db_mapping = shelve.open(f"{base_dir}/files_for_plots/transcripts_to_isoforms_mapping")
+    print([key for key in db_mapping])
     has_valid_protein = db_mapping.get(protein) is not None
     db_mapping.close()
 
