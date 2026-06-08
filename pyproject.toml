@@ -12,6 +12,8 @@ dependencies = [
     "charset-normalizer==2.1.1",
     "cycler==0.11.0",
     "cython==0.29.37",
+    "dash>=4.2.0",
+    "dash-bootstrap-components>=2.0.4",
     "deeploc2",
     "fair-esm==0.4.0",
     "fastparquet>=2024.11.0",

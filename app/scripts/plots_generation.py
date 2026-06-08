@@ -5,7 +5,6 @@ import math
 
 def create_localization_plot(localization_data, all_transcripts):  
     print("Creating localization plot...")
-    print(localization_data)
     if len(all_transcripts) != 0:
         df_exploded = localization_data.copy().reset_index()
         df_exploded['Protein_ID'] = df_exploded['Protein_ID'].str.split('<br>')
@@ -38,7 +37,7 @@ def create_localization_plot(localization_data, all_transcripts):
 
     return fig
 
-def create_topology_plot(mapping, sequences_data, available_transcripts, title, x_label, all_transcripts):
+def create_topology_plot(mapping, sequences_data, unique_transcripts, title, x_label, all_transcripts):
     print("Creating topology plot...")
 
     # Define colors and labels
@@ -61,8 +60,9 @@ def create_topology_plot(mapping, sequences_data, available_transcripts, title, 
     fig = go.Figure()
     isoforms = list(dict.fromkeys(mapping.values()))
     y_labels = [transcript_id for isoform in isoforms for transcript_id in isoform.split("<br>")]
+    y_labels, sequences_data = zip(*sorted(zip(y_labels, sequences_data), key=lambda x: x[0]))
 
-    y_label_available = [y_label in available_transcripts for y_label in y_labels]
+    y_label_available = [y_label in unique_transcripts for y_label in y_labels]
 
     added_to_legend = set()
 
@@ -93,7 +93,7 @@ def create_topology_plot(mapping, sequences_data, available_transcripts, title, 
 
     # Calculate height to match your original logic
     if len(all_transcripts) == 0:
-        num_isoforms = sum(y_label_available)
+        num_isoforms = len(unique_transcripts)
     else:
         num_isoforms = len(y_labels)
     calculated_height = num_isoforms * 50 

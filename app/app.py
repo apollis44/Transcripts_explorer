@@ -197,18 +197,14 @@ def get_topology_data(protein):
     sequences_data = db[protein]
     db.close()
 
-    db = shelve.open(f"{base_dir}/files_for_plots/TCGA_GTEx_plotting_data")
-    df = db[protein]
-    db.close()
-
-    if mapping is None or sequences_data is None or df is None:
+    if mapping is None or sequences_data is None:
         return None, None, None
 
-    available_transcripts = []
-    for available_transcript in df.loc[:,"protein"].unique():
-        available_transcripts.extend(available_transcript.split("<br>"))
+    unique_transcripts = []
+    for unique_transcript in set(mapping.values()):
+        unique_transcripts.append(unique_transcript.split("<br>")[0])
 
-    return mapping, sequences_data, available_transcripts
+    return mapping, sequences_data, unique_transcripts
 
 @lru_cache(maxsize=10)
 def get_query_data(search):
@@ -287,7 +283,7 @@ def render_page_content(query, pathname):
             [
                 dbc.Checklist(
                     options=[
-                        {"label": "All transcripts", "value": "all"},
+                        {"label": "Showing all transcripts, even those that lead to the same protein", "value": "all"},
                     ],
                     value=["all"],
                     switch=True,
@@ -314,7 +310,7 @@ def render_page_content(query, pathname):
             [
                 dbc.Checklist(
                     options=[
-                        {"label": "All transcripts", "value": "all"},
+                        {"label": "Showing all transcripts, even those that lead to the same protein", "value": "all"},
                     ],
                     value=["all"],
                     switch=True,
@@ -444,10 +440,9 @@ def topology_plot(search, all_transcripts):
         return go.Figure()
     title = "Membrane topology"
     x_label = "Amino acid position in MSA"
-    mapping, sequences_data, available_transcripts = get_topology_data(protein)
-    if mapping is None or sequences_data is None or available_transcripts is None:
-        return go.Figure()
-    fig = create_topology_plot(mapping, sequences_data, available_transcripts, title, x_label, all_transcripts)
+    mapping, sequences_data, unique_transcripts = get_topology_data(protein)
+
+    fig = create_topology_plot(mapping, sequences_data, unique_transcripts, title, x_label, all_transcripts)
     return fig
 
 @app.callback(
