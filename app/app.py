@@ -269,12 +269,10 @@ def render_page_content(query, pathname):
 
     # Check if the gene encodes any valid protein
     db_mapping = shelve.open(f"{base_dir}/files_for_plots/transcripts_to_isoforms_mapping")
-    keys = [key for key in db_mapping]
     has_valid_protein = db_mapping.get(protein) is not None
     db_mapping.close()
 
     if not has_valid_protein:
-        return html.P(keys), {"display": "none"}
         return html.P("This is the content of the home page of " + protein + + "!" + "\n" + "This gene does not encode for any coding protein"), {"display": "none"}
 
     if pathname == "/":
