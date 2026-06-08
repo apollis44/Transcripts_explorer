@@ -1,13 +1,14 @@
 import dash
 import dash_bootstrap_components as dbc
 from dash import Input, Output, dcc, html, State, ctx, ALL, no_update
-from scripts.plots_generation import *
+from scripts.plots_generation import create_localization_plot, plot_expression_data, create_topology_plot
 import pandas as pd
 import os
 from functools import lru_cache
 import shelve
 import numpy as np
 import urllib.parse
+import plotly.graph_objects as go
 
 # Initial values for the dropdowns
 tissue_types_inital_value = []
@@ -171,6 +172,8 @@ def get_localization_data(protein):
     db = shelve.open(f"{base_dir}/files_for_plots/deeploc2_output")
     df = db[protein]
     db.close()
+    if df is None:
+        return None
     df = df.iloc[:,:-4] # We exclude the last 4 columns that contains data we don't use
     return df
 
@@ -196,6 +199,11 @@ def get_topology_data(protein):
 
     db = shelve.open(f"{base_dir}/files_for_plots/TCGA_GTEx_plotting_data")
     df = db[protein]
+    db.close()
+
+    if mapping is None or sequences_data is None or df is None:
+        return None, None, None
+
     available_transcripts = []
     for available_transcript in df.loc[:,"protein"].unique():
         available_transcripts.extend(available_transcript.split("<br>"))
@@ -263,12 +271,28 @@ def render_page_content(query, pathname):
     if protein is None:
         return html.P("This protein is not in the database"), {"display": "none"}
 
+    # Check if the gene encodes any valid protein
+    db_mapping = shelve.open(f"{base_dir}/files_for_plots/transcripts_to_isoforms_mapping")
+    has_valid_protein = db_mapping.get(protein) is not None
+    db_mapping.close()
+
+    if not has_valid_protein:
+        return html.P("This is the content of the home page of " + protein + "!" + "\n" + "This gene does not encode for any coding protein"), {"display": "none"}
+
     if pathname == "/":
         return html.P("This is the content of the home page of " + protein + "!"), {"display": "none"}
 
     elif pathname == "/Localization":
         return html.Div(
             [
+                dbc.Checklist(
+                    options=[
+                        {"label": "All transcripts", "value": "all"},
+                    ],
+                    value=["all"],
+                    switch=True,
+                    id="localization-checklist",
+                ),
                 dbc.Spinner(
                     children=dcc.Graph(id="localization-plot"),
                     size="lg",
@@ -389,13 +413,20 @@ def expression_container_style(_1, _2, tissue_types):
 @app.callback(
     Output("localization-plot", "figure"),
     Input("url", "search"),
+    Input("localization-checklist", "value"),
     optional=True,
 )
-def localization_plot(search):
+def localization_plot(search, all_transcripts):
     protein = get_query_data(search)
+    if not protein:
+        return go.Figure()
     protein = getting_gene_names(protein.upper())
+    if not protein:
+        return go.Figure()
     localization_data = get_localization_data(protein)
-    fig = create_localization_plot(localization_data)
+    if localization_data is None:
+        return go.Figure()
+    fig = create_localization_plot(localization_data, all_transcripts)
     return fig
 
 @app.callback(
@@ -406,10 +437,16 @@ def localization_plot(search):
 )
 def topology_plot(search, all_transcripts):
     protein = get_query_data(search)
+    if not protein:
+        return go.Figure()
     protein = getting_gene_names(protein.upper())
+    if not protein:
+        return go.Figure()
     title = "Membrane topology"
     x_label = "Amino acid position in MSA"
     mapping, sequences_data, available_transcripts = get_topology_data(protein)
+    if mapping is None or sequences_data is None or available_transcripts is None:
+        return go.Figure()
     fig = create_topology_plot(mapping, sequences_data, available_transcripts, title, x_label, all_transcripts)
     return fig
 
@@ -417,10 +454,16 @@ def topology_plot(search, all_transcripts):
     Output('expression-plot', 'figure'),
     Input("expression-parameters", "data"),
     State("url", "search"),
+    Input("expression-reset-button", "n_clicks"),
     prevent_initial_call=True,
     optional=True,
 )
-def update_expression_plot(parameters, search):
+def update_expression_plot(parameters, search, is_clicked):
+    ctx = dash.callback_context
+    trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
+    if trigger_id == "expression-reset-button":
+        return
+
     protein = get_query_data(search)
     protein = getting_gene_names(protein.upper())
     expression_df = get_expression_data(protein)

@@ -87,46 +87,54 @@ def merge_expression_and_metadata(expression_df, samples_metadata_phenotype):
     """
 
     # We keep only samples that are in the datasets
-    common_samples = expression_df.columns.intersection(samples_metadata_phenotype.index).tolist()
-    expression_df = expression_df.loc[:,common_samples].T
-    samples_metadata_phenotype = samples_metadata_phenotype.loc[common_samples]
+    common_samples = expression_df.columns.intersection(samples_metadata_phenotype.index)
 
     # We want to keep only samples from GTEX and TCGA
-    samples_to_keep = samples_metadata_phenotype.loc[samples_metadata_phenotype['_study'].isin(["GTEX", "TCGA"]),:].index.tolist()
-    expression_df = expression_df.loc[samples_to_keep]
-    samples_metadata_phenotype = samples_metadata_phenotype.loc[samples_to_keep]
+    metadata_filtered = samples_metadata_phenotype.loc[common_samples]
+    metadata_filtered = metadata_filtered[metadata_filtered['_study'].isin(["GTEX", "TCGA"])]
+
+    # We transpose and reindex the expression dataframe
+    expression_df = expression_df.loc[:, metadata_filtered.index].T
 
     # We add the metadata columns to the expression dataframe
-    expression_df["tissue_type"] = samples_metadata_phenotype.loc[expression_df.index, "_study"] + " " + samples_metadata_phenotype.loc[expression_df.index, "detailed_category"]
-    expression_df["study"] = samples_metadata_phenotype.loc[expression_df.index, "_study"]
+    expression_df["tissue_type"] = metadata_filtered["_study"] + " " + metadata_filtered["detailed_category"]
+    expression_df["study"] = metadata_filtered["_study"]
 
     return expression_df
 
-def getting_expression_data(ensembl_ids, transcripts_length, mapping, samples, available_transcripts, codes):
-    expression_tpm_df_init = extracting_tpm_expression_data(ensembl_ids, samples, available_transcripts)
+def getting_expression_data(tpm_expression_df, metadata_df, ensembl_ids, mapping):
+    common_ids = [x for x in tpm_expression_df.obs_names if x.split('.')[0] in set(ensembl_ids)]
+    expression_tpm_df_init = tpm_expression_df[common_ids, :].to_memory().to_df()
+    expression_tpm_df_init.index = [x.split('.')[0] for x in expression_tpm_df_init.index]
 
     if len(expression_tpm_df_init) == 0:
         return None
 
     # The expression data is: log2(tpm + 0.001), we convert it to tpm
-    # We first convert values to float to avoid errors
-    expression_tpm_df_init = expression_tpm_df_init.map(lambda x: float(x))
-    expression_tpm_df_init = expression_tpm_df_init.map(lambda x: np.power(2, x) - 0.001)
-
-    expression_tpm_df_merged = pd.DataFrame(columns=expression_tpm_df_init.columns)
+    # Vectorized conversion using NumPy
+    vals = expression_tpm_df_init.values.astype(float)
+    vals = np.power(2.0, vals) - 0.001
+    expression_tpm_df_init = pd.DataFrame(vals, index=expression_tpm_df_init.index, columns=expression_tpm_df_init.columns)
 
     # We sum the expression values for each isoform
+    merged_data = {}
     for isoform in dict.fromkeys(mapping.values()):
         transcripts = isoform.split("<br>")
-        common_transcripts = list(set(transcripts) & set(expression_tpm_df_init.index))
+        common_transcripts = [t for t in transcripts if t in expression_tpm_df_init.index]
         if len(common_transcripts) > 0:
             new_index_name = "<br>".join(common_transcripts)
-            expression_tpm_df_merged.loc[new_index_name,:] = expression_tpm_df_init.loc[common_transcripts,:].sum(axis=0)
+            merged_data[new_index_name] = expression_tpm_df_init.loc[common_transcripts, :].sum(axis=0)
 
-    # We normalize the expression data to log2(tpm + 1)
-    expression_normalized_df = expression_tpm_df_merged.map(lambda x: np.log2(x + 1))
+    if merged_data:
+        expression_tpm_df_merged = pd.DataFrame.from_dict(merged_data, orient='index')
+    else:
+        expression_tpm_df_merged = pd.DataFrame(columns=expression_tpm_df_init.columns)
 
-    metadata_df_phenotype_init = get_samples_metadata(samples, codes)
+    # We normalize the expression data to log2(tpm + 1) using vectorized NumPy operation
+    vals_merged = expression_tpm_df_merged.values.astype(float)
+    expression_normalized_df = pd.DataFrame(np.log2(vals_merged + 1.0), index=expression_tpm_df_merged.index, columns=expression_tpm_df_merged.columns)
+
+    metadata_df_phenotype_init = metadata_df
     expression_normalized_df = merge_expression_and_metadata(expression_normalized_df, metadata_df_phenotype_init)
 
     return expression_normalized_df
@@ -143,27 +151,31 @@ def create_expression_figure_objects(expression_df):
         """
         Calculates standard boxplot statistics for a given array of data.
         """
-        # 1. Basic Stats
-        med = group_data.median()
-        q1 = group_data.quantile(0.25)
-        q3 = group_data.quantile(0.75)
+        vals = group_data.values
+        if len(vals) == 0:
+            return pd.Series({
+                "median": np.nan,
+                "q1": np.nan,
+                "q3": np.nan,
+                "lowerfence": np.nan,
+                "upperfence": np.nan,
+                "y": [],
+            })
+
+        q1, med, q3 = np.percentile(vals, [25, 50, 75])
         iqr = q3 - q1
-        
-        # 2. Whiskers (1.5 * IQR rule)
+
         low_limit = q1 - 1.5 * iqr
         high_limit = q3 + 1.5 * iqr
-        
-        # Identify data points within the limits
-        inside_data = group_data[(group_data >= low_limit) & (group_data <= high_limit)]
-        
-        # The whisker ends are the actual min/max of the data INSIDE the limits
-        # (Matplotlib convention: whiskers don't extend to empty space)
-        lowerfence = inside_data.min() if not inside_data.empty else q1
-        upperfence = inside_data.max() if not inside_data.empty else q3
-        
-        # 3. Outliers (Fliers)
-        fliers = group_data[(group_data < lowerfence) | (group_data > upperfence)].tolist()
-        
+
+        inside_mask = (vals >= low_limit) & (vals <= high_limit)
+        inside_data = vals[inside_mask]
+
+        lowerfence = inside_data.min() if len(inside_data) > 0 else q1
+        upperfence = inside_data.max() if len(inside_data) > 0 else q3
+
+        fliers = vals[~inside_mask].tolist()
+
         return pd.Series({
             "median": med,
             "q1": q1,
@@ -172,7 +184,7 @@ def create_expression_figure_objects(expression_df):
             "upperfence": upperfence,
             "y": fliers,
         })
-    
+
     dd = dd.groupby(['study', 'tissue_type', 'protein'], sort=False)['expression'].apply(get_boxplot_stats).unstack().reset_index()
 
     return dd

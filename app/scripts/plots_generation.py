@@ -3,14 +3,26 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import math
 
-def create_localization_plot(localization_data):    
+def create_localization_plot(localization_data, all_transcripts):  
+    print("Creating localization plot...")
+    print(localization_data)
+    if len(all_transcripts) != 0:
+        df_exploded = localization_data.copy().reset_index()
+        df_exploded['Protein_ID'] = df_exploded['Protein_ID'].str.split('<br>')
+        df_exploded = df_exploded.explode('Protein_ID')
+        df_exploded.set_index('Protein_ID', inplace=True)
+        localization_data_plot = df_exploded
+    else:
+        localization_data_plot = localization_data.copy()
+        localization_data_plot.index = [index.split("<br>")[0] for index in localization_data_plot.index]
+        
     # Sort by alphabetical order
-    localization_data.sort_index(inplace=True)
+    localization_data_plot.sort_index(inplace=True)
 
     fig = go.Figure(data=go.Heatmap(
-        z=localization_data.values,
-        x=localization_data.columns.tolist(),
-        y=localization_data.index.tolist(),
+        z=localization_data_plot.values,
+        x=localization_data_plot.columns.tolist(),
+        y=localization_data_plot.index.tolist(),
         colorscale='RdBu_r',
         zmin=0,
         zmax=1,
@@ -19,7 +31,7 @@ def create_localization_plot(localization_data):
     ))
 
     fig.update_layout(
-        height=len(localization_data)*200,
+        height=len(localization_data_plot)*100,
         yaxis=dict(autorange='reversed'), # Often needed to keep top-to-bottom orientation
         margin=dict(l=50, r=50, t=50, b=50)
     )
@@ -31,9 +43,9 @@ def create_topology_plot(mapping, sequences_data, available_transcripts, title, 
 
     # Define colors and labels
     color_map = {
-        'S': '#FF0000', 
-        'O': '#E69F00', 
-        'I': '#95B8C8', 
+        'S': '#FF0000',
+        'O': '#E69F00',
+        'I': '#95B8C8',
         '-': "#808080",
         'M': '#006D6F', 
     }
@@ -121,7 +133,7 @@ def create_topology_plot(mapping, sequences_data, available_transcripts, title, 
 def plot_expression_data(expression_df):
     print("Creating expression plot...")
 
-    tissue_types = expression_df.loc[:,"tisue_type"].unique().tolist()
+    tissue_types = expression_df.loc[:,"tissue_type"].unique().tolist()
 
     nb_tissue_types = len(tissue_types)
     rows_count = math.ceil(nb_tissue_types / 2)

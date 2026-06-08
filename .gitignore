@@ -2,3 +2,7 @@ files
 __pycache__
 app/__pycache__
 DeepTMHMM
+uv.lock
+DeepTMHMM-Academic-License-v1.0.zip
+.python-version
+scripts/files_genes/transcript_counts_sparse.h5ad

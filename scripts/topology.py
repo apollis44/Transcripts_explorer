@@ -25,40 +25,24 @@ def ensure_dir(directory):
 def get_transcripts_and_sequences(ensembl_id, output_dir, session):
     ensure_dir(output_dir)
     
-    # 1. Fetch Transcripts
-    transcripts = fetch_transcripts(ensembl_id, session)
-
-    if transcripts == []:
-        return None, None, None, None
-
-    transcripts_ids = []
-    for transcript in transcripts:
-        transcripts_ids.append(transcript['id'])
-
-    transcripts_ids.sort()
-
-    # 2. Fetch Transcripts Lengths
-    transcripts_lengths = fetch_cdna_length(transcripts_ids, session)
-
-    # 3. Fetch Protein Sequences
-    protein_sequences = fetch_protein_sequence(transcripts_ids, session)
-
-    unique_sequences = list(dict.fromkeys(protein_sequences.values()))
-    if len(unique_sequences) == 1:
-        one_isoform = True
-    else:
-        one_isoform = False
-
-    transcripts_mapping = {}
-    with open(f"{output_dir}/isoforms.fasta", "w") as fasta_file:
-        for i, seq in enumerate(unique_sequences):
-            ids = [k for k, v in protein_sequences.items() if v == seq]
-            header = ">" + ids[0]
-            fasta_file.write(f"{header}\n{seq}\n")
-            for id in ids:
-                transcripts_mapping[id] = "<br>".join(ids)
-            
-    return transcripts_ids, transcripts_mapping, transcripts_lengths, one_isoform
+    # We use a persistent cache directory
+    cache_db_path = "./.cache_ensembl/sequences_cache"
+    ensure_dir("./.cache_ensembl")
+    
+    import shelve
+    # Check cache first
+    with shelve.open(cache_db_path) as db:
+        if ensembl_id in db:
+            cached = db[ensembl_id]
+            if cached is None:
+                return None, None, None
+            # Write isoforms.fasta from cache
+            with open(f"{output_dir}/isoforms.fasta", "w") as fasta_file:
+                fasta_file.write(cached["fasta_content"])
+            return cached["transcripts_ids"], cached["transcripts_mapping"], cached["one_isoform"]
+    
+    # If not in the cache, raise error
+    raise Exception(f"Gene {ensembl_id} not found in cache")
 
 def align_protein_sequences(mapping, output_dir, base_dir):
     ensure_dir(output_dir)
@@ -83,8 +67,10 @@ def align_protein_sequences(mapping, output_dir, base_dir):
         fasta_input
     ]
 
-    # Run MAFFT and capture stdout in memory (text=True decodes it to a string)
-    result = subprocess.run(mafft_args, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, check=True)
+    # Run MAFFT and capture stdout and stderr in memory
+    result = subprocess.run(mafft_args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"MAFFT failed with exit code {result.returncode}.\nMAFFT stderr: {result.stderr}\nMAFFT stdout: {result.stdout}")
 
     records = list(SeqIO.parse(StringIO(result.stdout), "fasta"))
 

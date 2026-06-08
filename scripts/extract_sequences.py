@@ -1,6 +1,7 @@
 from matplotlib.pylab import result_type
 import requests
 import json
+import time
 
 def fetch_transcripts(ensembl_id, session):
     """
@@ -23,34 +24,38 @@ def fetch_transcripts(ensembl_id, session):
     # Parameters to retrieve expanded information including transcripts.
     params = {"expand": "1"}
 
-    try:
-        # Make the GET request to the Ensembl API.
-        response = session.get(server + endpoint, headers=headers, params=params)
-        
-        # Raise an exception for bad status codes (4xx or 5xx).
-        response.raise_for_status()
+    delay = 2
+    for attempt in range(10):
+        try:
+            # Make the GET request to the Ensembl API.
+            response = session.get(server + endpoint, headers=headers, params=params, timeout=45)
+            
+            if response.status_code == 429:
+                retry_after = response.headers.get("Retry-After")
+                wait_time = int(retry_after) if retry_after and retry_after.isdigit() else delay
+                print(f"Rate limited (429). Waiting {wait_time} seconds before retry...")
+                time.sleep(wait_time)
+                delay = min(delay * 2, 60)
+                continue
 
-        # If the request was successful, return the json output.
-        response = response.json()
+            # Raise an exception for bad status codes (4xx or 5xx).
+            response.raise_for_status()
 
-        transcripts = []
-        for transcript in response['Transcript']:
-            if transcript["biotype"] == "protein_coding":
-                transcripts.append(transcript)
-        return transcripts
+            # If the request was successful, return the json output.
+            res_json = response.json()
 
-    except requests.exceptions.HTTPError as http_err:
-        # Handle HTTP errors (e.g., 404 Not Found, 500 Server Error).
-        print(f"\033[31mHTTP error occurred: {http_err}\033[0m")
-        print(f"Status Code: {response.status_code}")
-        print("Please check if the Ensembl ID is correct and corresponds to a gene.")
-        # The response content might contain a more specific error message from the server.
-        print(f"Server response: {response.content.decode()}")
-        return None
-    except requests.exceptions.RequestException as req_err:
-        # Handle other request errors (e.g., network issues).
-        print(f"\033[31mAn error occurred: {req_err}\033[0m")
-        return None
+            transcripts = []
+            for transcript in res_json['Transcript']:
+                if transcript["biotype"] == "protein_coding":
+                    transcripts.append(transcript)
+            return transcripts
+
+        except Exception as e:
+            print(f"Error fetching transcripts for {ensembl_id} (attempt {attempt + 1}/10): {e}")
+            if attempt == 9:
+                raise RuntimeError(f"Failed to fetch transcripts for {ensembl_id} after 10 attempts: {e}") from e
+            time.sleep(delay)
+            delay = min(delay * 2, 60)
 
 def fetch_protein_sequence(ensembl_ids, session):
     """
@@ -76,32 +81,36 @@ def fetch_protein_sequence(ensembl_ids, session):
     # Parameters to specify the type of sequence to retrieve.
     params = {"type": "protein"}
 
-    try:
-        # Make the GET request to the Ensembl API.
-        response = session.post(server+endpoint, headers=headers, data=json.dumps(data), params=params)
-        
-        # Raise an exception for bad status codes (4xx or 5xx).
-        response.raise_for_status()
+    delay = 2
+    for attempt in range(10):
+        try:
+            # Make the POST request to the Ensembl API.
+            response = session.post(server+endpoint, headers=headers, data=json.dumps(data), params=params, timeout=45)
+            
+            if response.status_code == 429:
+                retry_after = response.headers.get("Retry-After")
+                wait_time = int(retry_after) if retry_after and retry_after.isdigit() else delay
+                print(f"Rate limited (429). Waiting {wait_time} seconds before retry...")
+                time.sleep(wait_time)
+                delay = min(delay * 2, 60)
+                continue
 
-        response = response.json()
+            # Raise an exception for bad status codes (4xx or 5xx).
+            response.raise_for_status()
 
-        protein_sequences = {item["query"]: item["seq"] for item in response}
-        
-        # If the request was successful, return the sequence text.
-        return protein_sequences
+            res_json = response.json()
 
-    except requests.exceptions.HTTPError as http_err:
-        # Handle HTTP errors (e.g., 404 Not Found, 500 Server Error).
-        print(f"\033[31mHTTP error occurred: {http_err}\033[0m")
-        print(f"Status Code: {response.status_code}")
-        print("Please check if the Ensembl ID is correct and corresponds to a protein.")
-        # The response content might contain a more specific error message from the server.
-        print(f"Server response: {response.content.decode()}")
-        return None
-    except requests.exceptions.RequestException as req_err:
-        # Handle other request errors (e.g., network issues).
-        print(f"\033[31mAn error occurred: {req_err}\033[0m")
-        return None
+            protein_sequences = {item["query"]: item["seq"] for item in res_json}
+            
+            # If the request was successful, return the sequence text.
+            return protein_sequences
+
+        except Exception as e:
+            print(f"Error fetching protein sequences (attempt {attempt + 1}/10): {e}")
+            if attempt == 9:
+                raise RuntimeError(f"Failed to fetch protein sequences after 10 attempts: {e}") from e
+            time.sleep(delay)
+            delay = min(delay * 2, 60)
 
 def fetch_cdna_length(ensembl_ids, session):
     """
@@ -125,27 +134,31 @@ def fetch_cdna_length(ensembl_ids, session):
 
     # Parameters to specify the type of sequence to retrieve.
     params = {"type": "cdna"}
-    try:
-        # Make the GET request to the Ensembl API.
-        response = session.post(server + endpoint, headers=headers, data=json.dumps(data), params=params)
-        
-        # Raise an exception for bad status codes (4xx or 5xx).
-        response.raise_for_status()
+    delay = 2
+    for attempt in range(10):
+        try:
+            # Make the POST request to the Ensembl API.
+            response = session.post(server + endpoint, headers=headers, data=json.dumps(data), params=params, timeout=45)
+            
+            if response.status_code == 429:
+                retry_after = response.headers.get("Retry-After")
+                wait_time = int(retry_after) if retry_after and retry_after.isdigit() else delay
+                print(f"Rate limited (429). Waiting {wait_time} seconds before retry...")
+                time.sleep(wait_time)
+                delay = min(delay * 2, 60)
+                continue
 
-        response = response.json()
-        
-        # If the request was successful, return the sequence text.
-        return {item["query"]: len(item["seq"]) for item in response}
+            # Raise an exception for bad status codes (4xx or 5xx).
+            response.raise_for_status()
 
-    except requests.exceptions.HTTPError as http_err:
-        # Handle HTTP errors (e.g., 404 Not Found, 500 Server Error).
-        print(f"\033[31mHTTP error occurred: {http_err}\033[0m")
-        print(f"Status Code: {response.status_code}")
-        print("Please check if the Ensembl ID is correct and corresponds to a transcript.")
-        # The response content might contain a more specific error message from the server.
-        print(f"Server response: {response.content.decode()}")
-        return None
-    except requests.exceptions.RequestException as req_err:
-        # Handle other request errors (e.g., network issues).
-        print(f"\033[31mAn error occurred: {req_err}\033[0m")
-        return None
+            res_json = response.json()
+            
+            # If the request was successful, return the sequence text.
+            return {item["query"]: len(item["seq"]) for item in res_json}
+
+        except Exception as e:
+            print(f"Error fetching cDNA length (attempt {attempt + 1}/10): {e}")
+            if attempt == 9:
+                raise RuntimeError(f"Failed to fetch cDNA length after 10 attempts: {e}") from e
+            time.sleep(delay)
+            delay = min(delay * 2, 60)
