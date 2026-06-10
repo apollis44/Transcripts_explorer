@@ -256,7 +256,6 @@ def process_gene_worker(args):
 
 # Output directory
 out_dir = "./files"
-out_dir_for_plots = "./app/files_for_plots"
 
 # Proteins we want to show
 genes = pd.read_csv("./scripts/files_genes/genes.txt", index_col=0)
@@ -285,7 +284,7 @@ metadata_df = pd.read_csv(f"./scripts/files_genes/TcgaTargetGTEX_phenotype.txt",
 # Loading DeepTMHMM models (will be loaded on-demand in workers)
 print("Loading DeepTMHMM models (on-demand in workers)...")
 
-genes_id = ["ENSG00000182670","ENSG00000291738","ENSG00000291791", "ENSG00000285479"]
+genes_id = ["ENSG00000177455", "ENSG00000156738", "ENSG00000003056", "ENSG00000261857"]
 gene_info = {}
 for row in genes.itertuples():
     gid = row[0]

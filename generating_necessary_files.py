@@ -30,6 +30,8 @@ import DeepTMHMM.predict_api
 import pytorch_lightning as pl
 import torch.nn as nn
 import pkg_resources
+from esm import pretrained
+from DeepTMHMM.utils import hash_aa_string
 
 # Global variables for monkeypatching / caching
 _cached_esm_model = None
@@ -43,7 +45,6 @@ original_generate_esm_embeddings = DeepTMHMM.predict_api.generate_esm_embeddings
 
 def patched_generate_esm_embeddings(sequences, esm_embeddings_dir, esm_model, esm_alphabet, repr_layers=33, chunk_size=3):
     original_generate_esm_embeddings(sequences, esm_embeddings_dir, esm_model, esm_alphabet, repr_layers, chunk_size)
-    from DeepTMHMM.utils import hash_aa_string
     global _cached_embeddings
     for seq in sequences:
         h = hash_aa_string(seq)
@@ -88,7 +89,7 @@ def patched_ESM1bE2E_init(self):
     pl.LightningModule.__init__(self)
     global _cached_esm_model
     if _cached_esm_model is None:
-        from esm import pretrained
+        
         _cached_esm_model, _ = pretrained.load_model_and_alphabet("esm1b_t33_650M_UR50S")
     self.embedding_func = _cached_esm_model.eval()
     self.subcel_clfs = nn.ModuleList([
@@ -241,7 +242,9 @@ def process_gene_worker(args):
 
 # Output directory
 out_dir = "./files"
-out_dir_for_plots = "./app/files_for_plots"
+out_dir_for_plots = "./files_for_plots"
+
+ensure_dir(out_dir_for_plots)
 
 # Proteins we want to show
 genes = pd.read_csv("./scripts/files_genes/genes.txt", index_col=0)

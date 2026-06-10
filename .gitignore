@@ -3,6 +3,8 @@ __pycache__
 app/__pycache__
 DeepTMHMM
 app
+.cache_ensembl
+.venv
 uv.lock
 DeepTMHMM-Academic-License-v1.0.zip
 .python-version

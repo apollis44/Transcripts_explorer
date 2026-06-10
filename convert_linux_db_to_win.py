@@ -31,7 +31,7 @@ def convert_linux_to_universal(source_db_name):
 if __name__ == "__main__":
     # If your files are in the current directory
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    plot_dir = os.path.join(current_dir, "app/files_for_plots")
+    plot_dir = os.path.join(current_dir, "/files_for_plots")
     
     shelves_to_convert = [
         "deeploc2_output", 
